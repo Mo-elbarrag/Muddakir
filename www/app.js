@@ -15,6 +15,25 @@ const PRAISE = ['ممتاز!', 'برافو عليك!', 'ما شاء الله!'];
 const KEY = 'muddakir-data-v1';
 const STAR = 'M880 512L772 619.7L772 772L619.7 772L512 880L404.3 772L252 772L252 619.7L144 512L252 404.3L252 252L404.3 252L512 144L619.7 252L772 252L772 404.3Z';
 const STAR8 = 'M12 2l2.9 4.1L20 4l-2.1 5.1L22 12l-4.1 2.9L20 20l-5.1-2.1L12 22l-2.9-4.1L4 20l2.1-5.1L2 12l4.1-2.9L4 4l5.1 2.1z';
+const MILESTONES = [
+  { id: 'ayah1', title: 'أول آية', desc: 'بداية الطريق', test: (s) => s.mem >= 1 },
+  { id: 'ayah10', title: '١٠ آيات', desc: 'حفظت ١٠ آيات', test: (s) => s.mem >= 10 },
+  { id: 'ayah50', title: '٥٠ آية', desc: 'حفظت ٥٠ آية', test: (s) => s.mem >= 50 },
+  { id: 'ayah100', title: '١٠٠ آية', desc: 'حفظت ١٠٠ آية', test: (s) => s.mem >= 100 },
+  { id: 'ayah300', title: '٣٠٠ آية', desc: 'حفظت ٣٠٠ آية', test: (s) => s.mem >= 300 },
+  { id: 'surah1', title: 'أول سورة', desc: 'ختمت حفظ أول سورة', test: (s) => s.full.length >= 1 },
+  { id: 'week', title: 'أسبوع متواصل', desc: '٧ أيام ورا بعض', test: (s) => s.streak >= 7 },
+  { id: 'amma', title: 'جزء عمّ', desc: 'حفظت جزء عمّ كامل', test: (s) => s.amma }
+];
+const REMINDER_MSGS = [
+  'السلام عليكم يا {name}، وِردك مستنيك',
+  'فهل من مدّكر؟ يلا نحفظ آية النهارده',
+  'خمس دقايق مع القرآن تفرق في يومك',
+  'فيه آيات مستنية المراجعة النهارده',
+  'خيركم من تعلّم القرآن وعلّمه',
+  'كمّل من حيث وقفت يا {name}',
+  'الماهر بالقرآن مع السفرة الكرام البررة'
+];
 
 const ICONS = {
   home: 'M5 12l-2 0l9 -9l9 9l-2 0 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7 M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6',
@@ -50,6 +69,7 @@ function brandMark(size) {
     '<path d="M487 426.7A50 50 0 0 1 537 426.7"/><path d="M468 393.8A88 88 0 0 1 556 393.8"/><path d="M449 360.9A126 126 0 0 1 575 360.9"/></g></g></svg>';
 }
 
+const medal = (size, on) => '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR8 + '" fill="' + (on ? '#C7A55A' : 'none') + '" stroke="' + (on ? '#9C7E3A' : '#B9B2A2') + '" stroke-width="1.2" stroke-linejoin="round"/><circle cx="12" cy="12" r="4.2" fill="' + (on ? '#1C2B45' : 'none') + '" stroke="' + (on ? '#E2CB8E' : '#B9B2A2') + '" stroke-width="1"/></svg>';
 const starBadge = (n, full) => '<span class="badge' + (full ? ' full' : '') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR8 + '"/></svg><span>' + n + '</span></span>';
 const divider = () => '<div class="divider"><i></i><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR8 + '" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><i></i></div>';
 
@@ -91,6 +111,8 @@ function ayatTimes(n) {
   return n + ' مرة';
 }
 
+const defaultSettings = () => ({ theme: 'auto', reminder: { on: false, time: '20:00' } });
+
 let QURAN = [];
 let db = loadDb();
 let renderSeq = 0;
@@ -100,11 +122,12 @@ const tokenCache = new Map();
 const timingCache = {};
 
 function loadDb() {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY));
-    if (v && Array.isArray(v.profiles)) return v;
-  } catch (e) { /* ignore */ }
-  return { profiles: [], current: null };
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(KEY)); } catch (e) { v = null; }
+  if (!v || !Array.isArray(v.profiles)) v = { profiles: [], current: null };
+  if (!v.settings) v.settings = defaultSettings();
+  if (!v.settings.reminder) v.settings.reminder = defaultSettings().reminder;
+  return v;
 }
 
 function save() {
@@ -127,7 +150,7 @@ function newProfile(name, mode) {
     daily: { d: '', n: 0 },
     attempts: 0, scoreSum: 0,
     lastPos: null, lastStage: null,
-    ayat: {}, mistakes: {}
+    ayat: {}, mistakes: {}, days: [], awards: {}
   };
 }
 
@@ -162,6 +185,35 @@ function firstUnmemorized(s) {
 
 const todayCount = (p) => (p.daily && p.daily.d === dayKey() ? p.daily.n : 0);
 
+function streakOf(p) {
+  const set = new Set(p.days || []);
+  let n = 0;
+  let off = set.has(dayKey()) ? 0 : -1;
+  while (set.has(dayKey(off))) { n++; off--; }
+  return n;
+}
+
+function awardStats(p) {
+  const mem = Object.values(p.ayat).filter((x) => x.lvl >= 1).length;
+  const full = [];
+  QURAN.forEach((s) => { if (memCount(s.n) === s.ayat.length) full.push(s.n); });
+  return { mem, full, amma: full.filter((n) => n >= 78).length === 37, streak: streakOf(p) };
+}
+
+function checkAwards(p) {
+  p.awards = p.awards || {};
+  const st = awardStats(p);
+  const out = [];
+  MILESTONES.forEach((m) => {
+    if (!p.awards[m.id] && m.test(st)) { p.awards[m.id] = dayKey(); out.push({ title: m.title, desc: m.desc }); }
+  });
+  st.full.forEach((n) => {
+    if (!p.awards['s' + n]) { p.awards['s' + n] = dayKey(); out.push({ title: 'سورة ' + QURAN[n - 1].name, desc: 'ختمت حفظ السورة، ما شاء الله' }); }
+  });
+  if (out.length) save();
+  return out;
+}
+
 function applyResult(s, a, score, review) {
   const p = profile();
   const k = key(s, a);
@@ -178,6 +230,8 @@ function applyResult(s, a, score, review) {
       st.due = dayKey(1);
       p.daily = { d: dayKey(), n: todayCount(p) + 1 };
     }
+    p.days = p.days || [];
+    if (p.days[p.days.length - 1] !== dayKey()) { p.days.push(dayKey()); if (p.days.length > 90) p.days = p.days.slice(-90); }
   } else {
     st.bad++;
     p.mistakes[k] = (p.mistakes[k] || 0) + 1;
@@ -186,6 +240,8 @@ function applyResult(s, a, score, review) {
   st.last = dayKey();
   p.ayat[k] = st;
   save();
+  const won = checkAwards(p);
+  if (won.length) setTimeout(() => celebrate(won), 900);
 }
 
 function dueList() {
@@ -208,6 +264,136 @@ function toast(msg) {
 function showError(e) {
   console.error(e);
   toast((e && e.message) || 'حصلت مشكلة، جرّب تاني');
+}
+
+function confettiHtml(n) {
+  const colors = ['#C7A55A', '#E2CB8E', '#1C2B45', '#3D8A6E', '#F6F4EF'];
+  let h = '';
+  for (let i = 0; i < n; i++) {
+    h += '<i class="confetti" style="left:' + Math.round(Math.random() * 100) + '%;background:' + pick(colors) + ';animation-delay:' + (Math.random() * 0.6).toFixed(2) + 's;animation-duration:' + (1.8 + Math.random() * 1.2).toFixed(2) + 's"></i>';
+  }
+  return h;
+}
+
+function confettiBurst() {
+  const ov = document.createElement('div');
+  ov.className = 'celebrate burst';
+  ov.innerHTML = confettiHtml(26);
+  document.body.appendChild(ov);
+  setTimeout(() => ov.remove(), 3200);
+}
+
+function celebrate(items) {
+  if (!items || !items.length) return;
+  const it = items[0];
+  const ov = document.createElement('div');
+  ov.className = 'celebrate';
+  ov.innerHTML = confettiHtml(34) + '<div class="cel-card">' + medal(72, true) + '<b>' + esc(it.title) + '</b><p>' + esc(it.desc) + '</p>' +
+    '<button class="gold-btn">' + (items.length > 1 ? 'التالي' : 'الحمد لله') + '</button></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('button').onclick = () => { ov.remove(); celebrate(items.slice(1)); };
+}
+
+const capPlugin = (name) => {
+  const C = window.Capacitor;
+  if (!C) return null;
+  if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
+  try { return C.registerPlugin ? C.registerPlugin(name) : null; } catch (e) { return null; }
+};
+
+function isDark() {
+  const t = db.settings.theme;
+  if (t === 'dark') return true;
+  if (t === 'light') return false;
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+function applyTheme() {
+  const dark = isDark();
+  document.body.classList.toggle('dark', dark);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#0E1626' : '#F6F4EF');
+}
+
+async function scheduleReminders() {
+  const LN = capPlugin('LocalNotifications');
+  const r = db.settings.reminder;
+  if (!LN) { if (r.on) toast('التذكير بيشتغل على الموبايل بس'); return false; }
+  try { await LN.cancel({ notifications: [1001, 1002, 1003, 1004, 1005, 1006, 1007].map((id) => ({ id })) }); } catch (e) { /* ignore */ }
+  if (!r.on) return true;
+  try {
+    let perm = await LN.checkPermissions();
+    if (perm.display !== 'granted') perm = await LN.requestPermissions();
+    if (perm.display !== 'granted') {
+      r.on = false;
+      save();
+      toast('لازم تسمح بالإشعارات من إعدادات الموبايل');
+      return false;
+    }
+    const [h, m] = String(r.time || '20:00').split(':').map(Number);
+    const name = (profile() && profile().name) || '';
+    await LN.schedule({
+      notifications: REMINDER_MSGS.map((body, i) => ({
+        id: 1001 + i,
+        title: 'مُدَّكِر',
+        body: body.replace('{name}', name).replace(' يا ،', '،'),
+        schedule: { on: { weekday: i + 1, hour: h, minute: m } }
+      }))
+    });
+    toast('التذكير اتظبط الساعة ' + r.time);
+    return true;
+  } catch (e) {
+    showError(e);
+    return false;
+  }
+}
+
+async function exportBackup() {
+  const data = JSON.stringify({ app: 'muddakir', version: 1, date: new Date().toISOString(), db });
+  const name = 'muddakir-backup-' + dayKey() + '.json';
+  const FS = capPlugin('Filesystem');
+  const SH = capPlugin('Share');
+  if (FS && SH) {
+    try {
+      const w = await FS.writeFile({ path: name, data, directory: 'CACHE', encoding: 'utf8' });
+      await SH.share({ title: 'نسخة مُدَّكِر الاحتياطية', text: 'نسخة احتياطية من تقدمك في مُدَّكِر', files: [w.uri], dialogTitle: 'احفظ النسخة الاحتياطية' });
+      return;
+    } catch (e) {
+      if (e && /cancel/i.test(String(e.message || e))) return;
+      console.error(e);
+    }
+  }
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function importBackup(file) {
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const j = JSON.parse(fr.result);
+      const d = j && j.db;
+      if (!d || !Array.isArray(d.profiles)) throw new Error('bad');
+      if (!confirm('هيتم استبدال كل التقدم الحالي بالنسخة دي. نكمّل؟')) return;
+      db = d;
+      if (!db.settings) db.settings = defaultSettings();
+      if (!db.settings.reminder) db.settings.reminder = defaultSettings().reminder;
+      save();
+      toast('تم استرجاع النسخة');
+      go('home', {}, true);
+    } catch (e) {
+      toast('الملف ده مش نسخة احتياطية صحيحة');
+    }
+  };
+  fr.readAsText(file);
 }
 
 async function getTafsir() {
@@ -277,9 +463,7 @@ function pausesFor(row, tokens) {
   const st = row.slice(1, 1 + n);
   const en = row.slice(1 + n, 1 + 2 * n);
   const out = new Array(tokens.length).fill(null);
-  for (let k = 0; k + 1 < words.length; k++) {
-    out[words[k]] = st[map(words[k + 1])] - en[map(words[k])];
-  }
+  for (let k = 0; k + 1 < words.length; k++) out[words[k]] = st[map(words[k + 1])] - en[map(words[k])];
   return out;
 }
 
@@ -395,12 +579,6 @@ function navBar(active) {
 }
 
 const curDepth = () => (history.state && history.state.depth) || 0;
-const capPlugin = (name) => {
-  const C = window.Capacitor;
-  if (!C) return null;
-  if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
-  try { return C.registerPlugin ? C.registerPlugin(name) : null; } catch (e) { return null; }
-};
 
 function goBack() {
   const st = history.state || {};
@@ -476,6 +654,7 @@ function screenHome() {
   const done = todayCount(p);
   const goal = p.goal || 5;
   const pos = p.lastPos && QURAN[p.lastPos.s - 1] ? p.lastPos : null;
+  const awardsN = Object.keys(p.awards || {}).length;
   const segs = goal <= 10
     ? '<div class="segs">' + Array.from({ length: goal }, (_, i) => '<i class="' + (i < done ? 'on' : '') + '"></i>').join('') + '</div>'
     : '<div class="segs"><i class="on" style="flex:' + Math.min(done, goal) + '"></i><i style="flex:' + Math.max(0, goal - done) + '"></i></div>';
@@ -488,13 +667,28 @@ function screenHome() {
     divider() +
     '<div class="tiles"><button class="tile" id="rev"><b>' + arDigits(due) + '</b><small>للمراجعة</small></button>' +
     '<button class="tile" id="memT"><b>' + arDigits(mem) + '</b><small>آية محفوظة</small></button>' +
-    '<button class="tile wide" id="acts">' + icon('puzzle', 20) + '<span>الأنشطة</span>' + icon('chevronLeft', 18) + '</button></div>' +
+    '<button class="tile wide" id="acts">' + icon('puzzle', 20) + '<span>الأنشطة</span>' + icon('chevronLeft', 18) + '</button>' +
+    '<button class="tile wide" id="awardsT">' + icon('sparkle', 20) + '<span>إنجازاتي</span>' + (awardsN ? '<small>' + arDigits(awardsN) + '</small>' : '') + icon('chevronLeft', 18) + '</button></div>' +
     '</main>' + navBar('home');
   $('#cont').onclick = () => { if (pos) go('practice', { s: pos.s, a: pos.a }); else tab('surahs'); };
   $('#rev').onclick = () => tab('reviewHub');
   $('#memT').onclick = () => tab('surahs');
   $('#acts').onclick = () => tab('activities');
+  $('#awardsT').onclick = () => go('awards');
   $('#settings').onclick = () => go('settings');
+}
+
+function screenAwards() {
+  const p = profile();
+  p.awards = p.awards || {};
+  const st = awardStats(p);
+  app.innerHTML = topBar('إنجازاتي', true) + '<main class="wrap"><div class="section-title">المراحل</div><div class="awards">' +
+    MILESTONES.map((m) => { const on = !!p.awards[m.id]; return '<div class="award' + (on ? '' : ' off') + '">' + medal(42, on) + '<b>' + m.title + '</b><small>' + m.desc + '</small></div>'; }).join('') +
+    '</div>' + divider() + '<div class="section-title">السور اللي ختمت حفظها</div>' +
+    (st.full.length
+      ? '<div class="awards">' + st.full.map((n) => '<div class="award">' + medal(42, true) + '<b class="qf">' + esc(QURAN[n - 1].name) + '</b><small>' + arDigits(QURAN[n - 1].ayat.length) + ' آية</small></div>').join('') + '</div>'
+      : '<div class="card empty muted small">أول ما تختم حفظ سورة، شارتها هتظهر هنا.</div>') +
+    '<p class="muted small center">أيام متتالية: ' + arDigits(st.streak) + '</p></main>';
 }
 
 function screenSurahs() {
@@ -861,6 +1055,7 @@ function buildPractice(params, T, rid) {
     $('#steps').innerHTML = '';
     $('#ctrls').innerHTML = '';
     setStatus('');
+    confettiBurst();
     $('#result').innerHTML = '<div class="result pass"><div class="score">' + score + '%</div><b>' + (kids ? 'ما شاء الله! حفظت الآية' : 'حفظت الآية كاملة') + '</b>' +
       '<small>هترجعلك للمراجعة بكرة</small><button class="primary" id="nextAy">' + (last ? 'خلّصت السورة' : 'الآية التالية') + '</button>' +
       '<button class="light-btn" id="acts">أنشطة على الآية</button>' +
@@ -995,6 +1190,7 @@ function gameArrange(sura, s, a, ws, chain) {
     };
   });
   function finish() {
+    if (!errors) confettiBurst();
     $('#result').innerHTML = '<div class="result pass"><b>' + (errors === 0 ? 'ممتاز، من غير ولا غلطة' : 'أحسنت، رتّبتها') + '</b>' +
       (errors ? '<div class="counts"><span class="miss">' + errors + ' محاولة غلط</span></div>' : '') +
       (chain ? '<button class="primary" id="nx">التالي: أكمل الكلمة</button>' : '<button class="primary" id="again">آية تانية</button>') + '</div>';
@@ -1036,6 +1232,7 @@ function gameComplete(sura, s, a, ws, chain) {
       const right = options[+b.dataset.i].c === answer.c;
       $$('.opt-btn').forEach((x) => { if (options[+x.dataset.i].c === answer.c) x.classList.add('right'); });
       if (!right) b.classList.add('wrong');
+      else confettiBurst();
       const lastAyah = a === sura.ayat.length;
       $('#result').innerHTML = '<div class="result ' + (right ? 'pass' : 'fail') + '"><b>' + (right ? 'إجابة صح' : 'الإجابة الصح باللون الأخضر') + '</b>' +
         (chain ? '<button class="primary" id="nx">' + (lastAyah ? 'خلّصت السورة' : 'احفظ الآية التالية') + '</button>' : '<button class="primary" id="again">سؤال تاني</button>') + '</div>';
@@ -1091,6 +1288,7 @@ function gameConnect(sura, s) {
     };
   });
   function finish() {
+    if (!errors) confettiBurst();
     $('#result').innerHTML = '<div class="result pass"><b>' + (errors ? 'أحسنت، وصّلتهم كلهم' : 'ممتاز، من غير ولا غلطة') + '</b><button class="primary" id="again">جولة تانية</button></div>';
     $('#again').onclick = () => go('game', { s, kind: 'connect' }, true);
   }
@@ -1098,9 +1296,14 @@ function gameConnect(sura, s) {
 
 function screenSettings() {
   const p = profile();
+  const st = db.settings;
   const seg = (id, values, current, fmt) => '<div class="seg" id="' + id + '">' +
     values.map((v) => '<button data-v="' + v + '" class="' + (current === v ? 'on' : '') + '">' + (fmt ? fmt(v) : v) + '</button>').join('') + '</div>';
   app.innerHTML = topBar('الإعدادات', true) + '<main class="wrap">' +
+    '<section class="card"><h2>المظهر</h2>' + seg('themeSeg', ['auto', 'light', 'dark'], st.theme, (v) => ({ auto: 'تلقائي', light: 'نهاري', dark: 'ليلي' }[v])) + '</section>' +
+    '<section class="card"><h2>التذكير اليومي</h2>' + seg('remSeg', ['on', 'off'], st.reminder.on ? 'on' : 'off', (v) => (v === 'on' ? 'شغّال' : 'مقفول')) +
+    '<label class="opt"><span>الوقت</span><input type="time" id="remTime" class="time" value="' + esc(st.reminder.time) + '"></label>' +
+    '<p class="muted small">إشعار كل يوم يفكّرك بوِردك، وبيشتغل من غير إنترنت.</p></section>' +
     '<section class="card"><h2>وِرد اليوم (آيات جديدة)</h2>' + seg('goalSeg', GOALS, p.goal) + '</section>' +
     '<section class="card"><h2>عدد مرات الاستماع للمقطع</h2>' + seg('repSeg', REPEATS, p.repeat) + '</section>' +
     '<section class="card"><h2>القارئ</h2>' + RECITERS.map((r) =>
@@ -1109,14 +1312,34 @@ function screenSettings() {
     '<div class="legend">' + LEGEND.map(([cls, label]) => '<span><b class="dot" style="background:var(--' + cls + ')"></b>' + label + '</span>').join('') + '</div></section>' +
     '<section class="card"><h2>الوضع</h2>' + seg('modeSeg', ['adult', 'kids'], p.mode, (v) => (v === 'kids' ? 'طفل' : 'كبير')) +
     '<p class="muted small">نسبة النجاح في التسميع: ' + passMark(p) + '%</p></section>' +
+    '<section class="card"><h2>النسخة الاحتياطية</h2><p class="muted small">احفظ تقدمك كله في ملف، وتقدر ترجّعه على أي موبايل.</p>' +
+    '<button class="light-btn" id="exp">حفظ نسخة احتياطية</button><button class="light-btn" id="imp">استرجاع نسخة</button>' +
+    '<input type="file" id="impFile" accept=".json,application/json" hidden></section>' +
     '<section class="card"><h2>مصحح التلاوة</h2><p class="muted small">شغال على الموبايل نفسه من غير إنترنت، وبيتابع قراءتك كلمة بكلمة. بيكتشف الكلمات الغلط والناقصة، ومش بديل عن الشيخ.</p></section>' +
     '<section class="card"><h2>الملف الشخصي</h2><button class="light-btn" id="switch">تغيير الملف</button>' +
     '<button class="danger-btn" id="del">حذف ملف ' + esc(p.name) + '</button></section></main>';
+  $$('#themeSeg button').forEach((b) => { b.onclick = () => { st.theme = b.dataset.v; save(); render(history.state); }; });
+  $$('#remSeg button').forEach((b) => {
+    b.onclick = async () => {
+      st.reminder.on = b.dataset.v === 'on';
+      save();
+      await scheduleReminders();
+      render(history.state);
+    };
+  });
+  $('#remTime').onchange = (e) => {
+    st.reminder.time = e.target.value || '20:00';
+    save();
+    if (st.reminder.on) scheduleReminders();
+  };
   $$('#goalSeg button').forEach((b) => { b.onclick = () => { p.goal = +b.dataset.v; save(); render(history.state); }; });
   $$('#repSeg button').forEach((b) => { b.onclick = () => { p.repeat = +b.dataset.v; save(); render(history.state); }; });
   $$('#tjSeg button').forEach((b) => { b.onclick = () => { p.tajweed = b.dataset.v === 'on'; save(); render(history.state); }; });
   $$('#modeSeg button').forEach((b) => { b.onclick = () => { p.mode = b.dataset.v; save(); render(history.state); }; });
   $$('input[name=reciter]').forEach((r) => { r.onchange = () => { p.reciter = r.value; save(); toast('تم تغيير القارئ'); }; });
+  $('#exp').onclick = () => exportBackup();
+  $('#imp').onclick = () => $('#impFile').click();
+  $('#impFile').onchange = (e) => importBackup(e.target.files && e.target.files[0]);
   $('#switch').onclick = () => { db.current = null; save(); go('profiles', {}, true); };
   $('#del').onclick = () => {
     if (!confirm('حذف ملف ' + p.name + ' وكل تقدمه نهائيًا؟')) return;
@@ -1137,6 +1360,7 @@ function go(screen, params = {}, replace = false) {
 function render(state) {
   renderSeq++;
   cleanup();
+  applyTheme();
   const p = profile();
   document.body.classList.toggle('kids', !!p && p.mode === 'kids');
   document.body.classList.toggle('no-tj', !!p && p.tajweed === false);
@@ -1154,6 +1378,7 @@ function render(state) {
       case 'activities': screenActivities(); break;
       case 'surahActs': screenSurahActs(params); break;
       case 'game': screenGame(params); break;
+      case 'awards': screenAwards(); break;
       case 'settings': screenSettings(); break;
       default: screenHome();
     }
@@ -1162,6 +1387,13 @@ function render(state) {
 }
 
 async function init() {
+  applyTheme();
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => { if (db.settings.theme === 'auto') applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
   app.addEventListener('click', (e) => {
     if (e.target.closest('[data-back]')) { goBack(); return; }
     const t = e.target.closest('[data-tab]');

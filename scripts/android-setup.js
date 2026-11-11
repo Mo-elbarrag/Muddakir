@@ -3,6 +3,8 @@ const path = require('path');
 
 const RES = path.join('android', 'app', 'src', 'main', 'res');
 const STAR = 'M880 512L772 619.7L772 772L619.7 772L512 880L404.3 772L252 772L252 619.7L144 512L252 404.3L252 252L404.3 252L512 144L619.7 252L772 252L772 404.3Z';
+const BOOK_L = 'M512 640C452 605 385 600 335 615L335 480C385 465 452 470 512 500Z';
+const BOOK_R = 'M512 640C572 605 639 600 689 615L689 480C639 465 572 470 512 500Z';
 
 function iconSvg(bg, scale) {
   const back = bg === 'square' ? '<rect width="1024" height="1024" rx="230" fill="#1C2B45"/>'
@@ -10,12 +12,18 @@ function iconSvg(bg, scale) {
   return '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">' + back +
     '<g transform="translate(512 512) scale(' + scale + ') translate(-512 -512)">' +
     '<path d="' + STAR + '" fill="#26385A" stroke="#C7A55A" stroke-width="26" stroke-linejoin="round"/>' +
-    '<path d="M512 640C452 605 385 600 335 615L335 480C385 465 452 470 512 500Z" fill="#F6F4EF"/>' +
-    '<path d="M512 640C572 605 639 600 689 615L689 480C639 465 572 470 512 500Z" fill="#E9E1CF"/>' +
+    '<path d="' + BOOK_L + '" fill="#F6F4EF"/><path d="' + BOOK_R + '" fill="#E9E1CF"/>' +
     '<path d="M512 500L512 640" stroke="#C7A55A" stroke-width="8" stroke-linecap="round"/>' +
     '<g fill="none" stroke="#C7A55A" stroke-width="20" stroke-linecap="round">' +
     '<path d="M487 426.7A50 50 0 0 1 537 426.7"/><path d="M468 393.8A88 88 0 0 1 556 393.8"/><path d="M449 360.9A126 126 0 0 1 575 360.9"/>' +
     '</g></g></svg>';
+}
+
+function statusSvg() {
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">' +
+    '<g transform="translate(512 512) scale(1.05) translate(-512 -512)">' +
+    '<path d="' + STAR + '" fill="none" stroke="#FFFFFF" stroke-width="56" stroke-linejoin="round"/>' +
+    '<path d="' + BOOK_L + '" fill="#FFFFFF"/><path d="' + BOOK_R + '" fill="#FFFFFF"/></g></svg>';
 }
 
 function walk(dir, out = []) {
@@ -31,7 +39,7 @@ function walk(dir, out = []) {
 function setupPermissions() {
   const manifest = path.join('android', 'app', 'src', 'main', 'AndroidManifest.xml');
   let xml = fs.readFileSync(manifest, 'utf8');
-  for (const p of ['android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS']) {
+  for (const p of ['android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.POST_NOTIFICATIONS']) {
     if (!xml.includes(p)) xml = xml.replace('<application', '<uses-permission android:name="' + p + '" />\n\n    <application');
   }
   fs.writeFileSync(manifest, xml);
@@ -60,6 +68,7 @@ async function setupIcons(sharp) {
   const square = Buffer.from(iconSvg('square', 0.95));
   const round = Buffer.from(iconSvg('circle', 0.9));
   const fg = Buffer.from(iconSvg('none', 0.72));
+  const stat = Buffer.from(statusSvg());
   for (const [d, k] of Object.entries(dens)) {
     const dir = path.join(RES, 'mipmap-' + d);
     fs.mkdirSync(dir, { recursive: true });
@@ -68,6 +77,10 @@ async function setupIcons(sharp) {
     await sharp(square).resize(s48, s48).png().toFile(path.join(dir, 'ic_launcher.png'));
     await sharp(round).resize(s48, s48).png().toFile(path.join(dir, 'ic_launcher_round.png'));
     await sharp(fg).resize(s108, s108).png().toFile(path.join(dir, 'ic_launcher_foreground.png'));
+    const ddir = path.join(RES, 'drawable-' + d);
+    fs.mkdirSync(ddir, { recursive: true });
+    const s24 = Math.round(24 * k);
+    await sharp(stat).resize(s24, s24).png().toFile(path.join(ddir, 'ic_stat_muddakir.png'));
   }
   const anydpi = path.join(RES, 'mipmap-anydpi-v26');
   fs.mkdirSync(anydpi, { recursive: true });

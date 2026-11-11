@@ -169,3 +169,32 @@ details.heard{margin-top:8px;font-size:13px;color:var(--muted)}
 .nav button{width:auto;min-width:64px;height:auto;flex-direction:column;gap:2px;padding:6px 8px;border-radius:14px;font-size:10px}
 .nav button span{line-height:1.2}
 body.has-nav .wrap{padding-bottom:calc(112px + env(safe-area-inset-bottom))}
+body.dark{--paper:#0E1626;--card:#162135;--line:#25324A;--text:#ECE6D6;--muted:#8E98AC;--goldbg:#3A3220;--miss:#5E6B80;--ok:#5DBB91;--near:#D8B45E;--bad:#E06A5E;--tj-madd6:#E8677A;--tj-madd45:#F27A6C;--tj-madd246:#F5A35E;--tj-madd2:#D8B45E;--tj-ghunna:#5CC593;--tj-qalqala:#73AEF0;--tj-silent:#7E879A}
+body.dark .wird-in,body.dark .nav,body.dark .initial{background:#1B2A44}
+body.dark .primary,body.dark .chip.on,body.dark .seg button.on,body.dark .steps button.on,body.dark .bt.mic button{background:var(--gold);color:#1C2B45;border-color:var(--gold)}
+body.dark .hero-brand b{color:var(--text)}
+body.dark .badge.full svg path{fill:var(--gold)}
+body.dark .badge.full span{color:#1C2B45}
+body.dark .badge span{color:var(--text)}
+body.dark #toast{background:#ECE6D6;color:#1C2B45}
+body.dark .w.hint,body.dark .bt.hint button{background:#3A3220;border-color:#5A4A28}
+body.dark .opt-btn.right,body.dark .cbox.right{background:#1E3A30}
+body.dark .opt-btn.wrong,body.dark .cbox.wrong,body.dark .wchip.wrong,body.dark .danger-btn{background:#3E2222}
+body.dark .blank{border-bottom-color:#3A4760}
+.time{padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);margin-inline-start:auto;font:inherit}
+.celebrate{position:fixed;inset:0;z-index:40;background:rgba(14,22,38,.55);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.celebrate.burst{background:transparent;pointer-events:none}
+.cel-card{position:relative;background:var(--card);color:var(--text);border:1px solid var(--gold);border-radius:22px;padding:24px 20px;width:min(320px,86%);text-align:center;animation:rise .45s ease-out}
+.cel-card svg{display:block;margin:0 auto 10px}
+.cel-card b{display:block;font-size:20px;font-weight:600}
+.cel-card p{margin:6px 0 0;color:var(--muted);font-size:14px}
+@keyframes rise{0%{transform:translateY(30px) scale(.9);opacity:0}100%{transform:none;opacity:1}}
+.confetti{position:absolute;top:-20px;width:9px;height:14px;border-radius:2px;animation:fall 2.4s linear forwards}
+@keyframes fall{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(110vh) rotate(540deg);opacity:.2}}
+.awards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.award{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 6px;text-align:center}
+.award svg{display:block;margin:0 auto 6px}
+.award b{display:block;font-size:13px;font-weight:600}
+.award small{color:var(--muted);font-size:11px;line-height:1.4;display:block}
+.award.off{opacity:.4}
+.tile.wide small{margin-inline-start:auto}

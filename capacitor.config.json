@@ -4,5 +4,11 @@
   "webDir": "www",
   "android": {
     "adjustMarginsForEdgeToEdge": "auto"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_muddakir",
+      "iconColor": "#C7A55A"
+    }
   }
 }
