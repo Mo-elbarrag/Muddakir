@@ -1234,7 +1234,7 @@ function buildPractice(params, T, rid, cuts) {
         '<button class="primary" id="again">جرّب تاني</button>' + (canListen ? '<button class="light-btn" id="hear">اسمع ' + unit() + ' تاني</button>' : ''));
       $('#again').onclick = () => { $('#result').innerHTML = ''; startListen(); };
       const hr = $('#hear'); if (hr) hr.onclick = () => setStep('listen');
-      setStatus'راجع الكلمات الملونة وحاول مرة أخرى، وفقك الله';
+      setStatus('راجع الكلمات الملونة وحاول مرة أخرى، وفقك الله');
       return;
     }
     applyResult(s, a, score, mode === 'review' || !!(st0 && st0.lvl >= 1));
