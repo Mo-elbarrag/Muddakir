@@ -1,7 +1,7 @@
 const TJ = {
   h: 'tj-silent', s: 'tj-silent', l: 'tj-silent', u: 'tj-silent', d: 'tj-silent', b: 'tj-silent',
   n: 'tj-madd2', p: 'tj-madd246', o: 'tj-madd45', m: 'tj-madd6', q: 'tj-qalqala',
-  c: 'tj-ghunna', f: 'tj-ghunna', w: 'tj-ghunna', i: 'tj-ghunna', a: 'tj-ghunna', g: 'tj-ghunna'
+  c: 'tj-ghunna', f: 'tj-ghunna tj-f', w: 'tj-ghunna', i: 'tj-ghunna tj-i', a: 'tj-ghunna', g: 'tj-ghunna'
 };
 
 export const LEGEND = [

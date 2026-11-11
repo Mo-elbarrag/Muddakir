@@ -229,3 +229,10 @@ body.dark .w.picked{background:#3E2222}
 .sim-row:last-child{border-bottom:0}
 .sim-row b{display:block;font-size:15px;color:var(--gold)}
 .sim-q{font-size:20px;line-height:2;margin:4px 0 0}
+.tj-notes{margin:12px 0 4px;text-align:start;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tj-notes b{display:block;color:var(--near);margin-bottom:6px}
+.tj-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.tj-row:last-child{border-bottom:0}
+.tj-row .q{font-size:22px;line-height:1.8;flex:none}
+.tj-row small{font-size:13px;color:var(--text)}
+.w.tjn{border-bottom:2px dotted var(--near)}

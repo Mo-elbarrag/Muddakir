@@ -207,12 +207,90 @@ async function infer() {
   return s;
 }
 
+function melFrameSrc(src, srcLen, t, out, off) {
+  const c = t * HOP - N_FFT / 2;
+  for (let n = 0; n < N_FFT; n++) {
+    const idx = c + n;
+    frameBuf[n] = (idx >= 0 && idx < srcLen ? src[idx] : 0) * win[n];
+  }
+  for (let k = 0; k < NB; k++) {
+    let re = 0;
+    let im = 0;
+    const base = k * N_FFT;
+    for (let n = 0; n < N_FFT; n++) {
+      const v = frameBuf[n];
+      re += v * cosT[base + n];
+      im -= v * sinT[base + n];
+    }
+    powBuf[k] = re * re + im * im;
+  }
+  for (let m = 0; m < N_MELS; m++) {
+    let sum = 0;
+    const b = m * NB;
+    for (let k = 0; k < NB; k++) sum += melFB[b + k] * powBuf[k];
+    out[off + m] = sum;
+  }
+}
+
+async function scriptOfPcm(pcm) {
+  await init();
+  const L = LEAD + pcm.length + LEAD;
+  const src = new Float32Array(L);
+  src.set(pcm, LEAD);
+  const F = Math.floor(L / HOP);
+  let start = F > 3000 ? F - 3000 : 0;
+  let n = F - start;
+  if (n % 2) { start++; n--; }
+  if (n < 20) return '';
+  const mel = new Float32Array(N_MELS * n);
+  const tmp = new Float32Array(N_MELS);
+  let maxv = -Infinity;
+  for (let fr = 0; fr < n; fr++) {
+    melFrameSrc(src, L, start + fr, tmp, 0);
+    for (let m = 0; m < N_MELS; m++) {
+      const v = Math.log10(Math.max(tmp[m], 1e-10));
+      mel[m * n + fr] = v;
+      if (v > maxv) maxv = v;
+    }
+  }
+  const floor = maxv - 8;
+  for (let i = 0; i < mel.length; i++) {
+    const v = mel[i] < floor ? floor : mel[i];
+    mel[i] = (v + 4) / 4;
+  }
+  const out = await session.run({
+    mel: new ortLib.Tensor('float32', mel, [1, N_MELS, n]),
+    riwaya: new ortLib.Tensor('int64', BigInt64Array.from([0n]), [1])
+  });
+  const lp = out.logprobs || out[Object.keys(out)[0]];
+  const T = lp.dims[1];
+  const V = lp.dims[2];
+  const d = lp.data;
+  let prev = 0;
+  let res = '';
+  for (let t = 0; t < T; t++) {
+    let best = 0;
+    let bv = -Infinity;
+    const b = t * V;
+    for (let v = 0; v < V; v++) { if (d[b + v] > bv) { bv = d[b + v]; best = v; } }
+    if (best !== prev && best !== 0) res += PHONEMES[best - 1] || '';
+    prev = best;
+  }
+  return res;
+}
+
 self.onmessage = (e) => {
   const msg = e.data || {};
   if (msg.type === 'audio') { pushAudio(msg.data, msg.rate); return; }
   if (msg.type === 'reset') { reset(); self.postMessage({ id: msg.id, type: 'done' }); return; }
   if (msg.type === 'init') {
     init().then(() => self.postMessage({ id: msg.id, type: 'done' }))
+      .catch((err) => self.postMessage({ id: msg.id, type: 'error', message: String((err && err.message) || err) }));
+    return;
+  }
+  if (msg.type === 'analyze') {
+    queue = queue.then(() => scriptOfPcm(msg.audio))
+      .then((script) => self.postMessage({ id: msg.id, type: 'done', script }))
       .catch((err) => self.postMessage({ id: msg.id, type: 'error', message: String((err && err.message) || err) }));
     return;
   }

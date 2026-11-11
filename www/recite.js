@@ -224,3 +224,119 @@ export function alignWords(words, heard, final) {
   });
   return out;
 }
+
+export async function analyzePcm(pcm) {
+  await initEngine();
+  const m = await call('analyze', { audio: pcm }, [pcm.buffer]);
+  return m.script || '';
+}
+
+function skelWithMap(script) {
+  const raw = String(script);
+  const sk = [];
+  const map = [];
+  const conv = (ch) => {
+    if ('\u064E\u064F\u0650\u06EA\u0640\u06DC\u0619\u0687'.includes(ch)) return '';
+    if (ch === '\u06E6') return 'ي';
+    if (ch === '\u06E5') return 'و';
+    if (ch === '\u0672') return 'ا';
+    if (ch === '\u06BA') return 'ن';
+    if (ch === '\u06FE') return 'م';
+    if (ch === 'ء') return '';
+    return /[\u0621-\u064A]/.test(ch) ? ch : '';
+  };
+  for (let i = 0; i < raw.length; i++) {
+    const c = conv(raw[i]);
+    if (!c) { if (map.length) map[map.length - 1][1] = i; continue; }
+    if (sk.length && sk[sk.length - 1] === c) { map[map.length - 1][1] = i; continue; }
+    sk.push(c);
+    map.push([i, i]);
+  }
+  return { raw, sk: sk.join(''), map };
+}
+
+function spanAlign(words, heard) {
+  const ref = [];
+  words.forEach((w, wi) => { for (const ch of w) ref.push({ c: ch, w: wi, j: -1 }); });
+  const R = ref.length;
+  const H = heard.length;
+  const spans = words.map(() => null);
+  if (!R || !H) return spans;
+  const W = H + 1;
+  const dp = new Float32Array((R + 1) * W);
+  const bt = new Uint8Array((R + 1) * W);
+  for (let j = 1; j <= H; j++) { dp[j] = dp[j - 1] + 0.35; bt[j] = 2; }
+  for (let i = 1; i <= R; i++) { dp[i * W] = dp[(i - 1) * W] + gapCost(ref[i - 1].c); bt[i * W] = 1; }
+  for (let i = 1; i <= R; i++) {
+    for (let j = 1; j <= H; j++) {
+      const sub = dp[(i - 1) * W + j - 1] + subCost(ref[i - 1].c, heard[j - 1]);
+      const del = dp[(i - 1) * W + j] + gapCost(ref[i - 1].c);
+      const ins = dp[i * W + j - 1] + gapCost(heard[j - 1]);
+      let best = sub;
+      let b = 0;
+      if (del < best) { best = del; b = 1; }
+      if (ins < best) { best = ins; b = 2; }
+      dp[i * W + j] = best;
+      bt[i * W + j] = b;
+    }
+  }
+  let jEnd = H;
+  let bv = Infinity;
+  for (let j = 0; j <= H; j++) { const v = dp[R * W + j] + 0.35 * (H - j); if (v < bv) { bv = v; jEnd = j; } }
+  let i = R;
+  let j = jEnd;
+  while (i > 0 && j > 0) {
+    const b = bt[i * W + j];
+    if (b === 0) { if (subCost(ref[i - 1].c, heard[j - 1]) < 0.6) ref[i - 1].j = j - 1; i--; j--; }
+    else if (b === 1) i--;
+    else j--;
+  }
+  ref.forEach((r) => {
+    if (r.j < 0) return;
+    const sp = spans[r.w];
+    if (!sp) spans[r.w] = [r.j, r.j];
+    else { sp[0] = Math.min(sp[0], r.j); sp[1] = Math.max(sp[1], r.j); }
+  });
+  return spans;
+}
+
+function maxVowelRun(seg) {
+  let best = 0;
+  let cur = 0;
+  let prev = '';
+  for (const ch of seg) {
+    if (ch === 'ا' || ch === '\u06E6' || ch === '\u06E5') {
+      cur = ch === prev ? cur + 1 : 1;
+      if (cur > best) best = cur;
+      prev = ch;
+    } else if (!'\u064E\u064F\u0650\u06EA\u0640'.includes(ch)) {
+      prev = '';
+      cur = 0;
+    }
+  }
+  return best;
+}
+
+export function tajweedNotes(items, script) {
+  const { raw, sk, map } = skelWithMap(script);
+  const spans = spanAlign(items.map((x) => x.sk), sk);
+  return items.map((it, k) => {
+    const sp = spans[k];
+    if (!sp) return [];
+    const startRaw = map[sp[0]][0];
+    let endRaw = map[sp[1]][1];
+    const nxt = spans.slice(k + 1).find(Boolean);
+    endRaw = nxt ? Math.max(endRaw, map[nxt[0]][0] - 1) : raw.length - 1;
+    const seg = raw.slice(startRaw, endRaw + 1);
+    const run = maxVowelRun(seg);
+    const notes = [];
+    const fl = it.flags;
+    if (fl.m45 && run > 0 && run <= 2) notes.push('المد هنا يُمد ٤ أو ٥ حركات، ومديته أقل');
+    if (fl.m6 && run > 0 && run <= 2) notes.push('المد اللازم يُمد ٦ حركات، ومديته أقل');
+    if (fl.m2 && !it.last && run >= 5) notes.push('المد الطبيعي حركتان فقط');
+    if (fl.f && !seg.includes('\u06BA') && seg.includes('ن')) notes.push('إخفاء: أخفِ النون مع الغنة ولا تظهرها');
+    if (fl.i && !seg.includes('\u06FE')) notes.push('إقلاب: اقلب النون ميمًا مخفاة مع الغنة');
+    if (fl.q && !seg.includes('\u0687')) notes.push('قلقلة: انبر الحرف الساكن نبرة واضحة');
+    return notes;
+  });
+}

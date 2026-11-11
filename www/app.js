@@ -1,4 +1,4 @@
-import { initEngine, isReady, startListening, stopListening, inferNow, refSkeleton, heardSkeleton, alignWords } from './recite.js';
+import { initEngine, isReady, startListening, stopListening, inferNow, refSkeleton, heardSkeleton, alignWords, analyzePcm, tajweedNotes } from './recite.js';
 import { parseAyah, splitChunks, buildStages, meaningSegment, chunksFromCuts, isStopMark, LEGEND } from './quran.js';
 
 const RECITERS = [
@@ -832,7 +832,7 @@ async function fetchAudioBuffer(url) {
 }
 
 async function audioCuts(s, a, tokens, row) {
-  const ck = 'mdk-cuts-' + reciterId(profile()) + '-' + s + '-' + a;
+  const ck = 'mdk-cuts3-' + reciterId(profile()) + '-' + s + '-' + a;
   if (cutCache[ck]) return cutCache[ck];
   try { const v = JSON.parse(localStorage.getItem(ck)); if (Array.isArray(v)) { cutCache[ck] = v; return v; } } catch (e) { /* ignore */ }
   const buf = await fetchAudioBuffer(audioUrl(s, a));
@@ -856,7 +856,7 @@ async function audioCuts(s, a, tokens, row) {
   const sorted = Float32Array.from(rms).sort();
   const floor = sorted[Math.floor(nF * 0.1)];
   const voiced = sorted[Math.floor(nF * 0.6)];
-  const thr = floor + 0.18 * (voiced - floor);
+  const thr = floor + 0.15 * (voiced - floor);
   const isV = new Uint8Array(nF);
   for (let fr = 0; fr < nF; fr++) isV[fr] = rms[fr] > thr ? 1 : 0;
   const first = isV.indexOf(1);
@@ -869,60 +869,49 @@ async function audioCuts(s, a, tokens, row) {
     if (!isV[fr]) {
       const st = fr;
       while (fr < lastV && !isV[fr]) fr++;
-      if (fr - st >= 28) sil.push([st, fr]);
+      if (fr - st >= 25) sil.push([st, fr]);
     } else fr++;
   }
+  const segs = [];
+  let st = first;
+  for (const [ss, se] of sil) { segs.push([st, ss]); st = se; }
+  segs.push([st, lastV + 1]);
   const words = [];
   tokens.forEach((t, i) => { if (t.c) words.push(i); });
   const W = words.length;
-  const marks = new Set();
-  for (let k = 0; k + 1 < W; k++) {
-    for (let i = words[k] + 1; i < words[k + 1]; i++) if (!tokens[i].c && isStopMark(tokens[i].plain)) marks.add(k);
-  }
-  let starts = null;
-  if (row) {
-    const n = row[0];
-    const map = rowMapper(n, tokens);
-    const stt = row.slice(1, 1 + n);
-    starts = words.map((ti) => stt[map(ti)] / 10);
-  }
-  const lens = words.map((ti) => Math.max(1, tokens[ti].c.length));
-  const totalLen = lens.reduce((x, y) => x + y, 0);
-  let voicedTotal = 0;
-  for (let i = first; i <= lastV; i++) voicedTotal += isV[i];
-  const cuts = new Set();
-  for (const [ss, se] of sil) {
-    let k;
-    if (starts) {
-      const mid = (ss + se) / 2;
-      let j = starts.findIndex((t) => t >= mid);
-      if (j < 0) j = W;
-      k = j - 1;
-    } else {
-      let vb = 0;
-      for (let i = first; i < ss; i++) vb += isV[i];
-      const frac = vb / Math.max(1, voicedTotal);
-      let cum = 0;
-      let best = 0;
-      let bd = Infinity;
-      for (let q = 0; q < W - 1; q++) {
-        cum += lens[q] / totalLen;
-        const d = Math.abs(cum - frac);
-        if (d < bd) { bd = d; best = q; }
-      }
-      k = best;
+  const cuts = [];
+  if (segs.length >= 2) {
+    const off = new OfflineAudioContext(1, Math.ceil(audio.duration * 16000), 16000);
+    const node = off.createBufferSource();
+    node.buffer = audio;
+    node.connect(off.destination);
+    node.start();
+    const rendered = await off.startRendering();
+    const pcm16 = rendered.getChannelData(0);
+    const sks = words.map((ti) => refSkeleton(tokens[ti].plain));
+    await initEngine();
+    let ptr = 0;
+    for (let g = 0; g < segs.length - 1 && ptr < W - 1; g++) {
+      const s0 = Math.max(0, Math.floor(segs[g][0] * 160) - 800);
+      const s1 = Math.min(pcm16.length, Math.ceil(segs[g][1] * 160) + 800);
+      let piece = pcm16.slice(s0, s1);
+      if (piece.length > 16000 * 28) piece = piece.slice(piece.length - 16000 * 28);
+      if (piece.length < 4000) continue;
+      const script = await analyzePcm(piece);
+      const hiW = Math.min(W, ptr + 45);
+      const res = alignWords(sks.slice(ptr, hiW), heardSkeleton(script), false);
+      let lastK = -1;
+      res.forEach((r, k) => { if (r.done && r.ratio >= 0.5) lastK = k; });
+      if (lastK < 0) continue;
+      const end = ptr + lastK;
+      if (end >= W - 1) break;
+      cuts.push(end);
+      ptr = end + 1;
     }
-    if (k < 0 || k > W - 2) continue;
-    if (!marks.has(k)) {
-      if (marks.has(k - 1)) k -= 1;
-      else if (marks.has(k + 1)) k += 1;
-    }
-    cuts.add(k);
   }
-  const out = Array.from(cuts).sort((x, y) => x - y);
-  cutCache[ck] = out;
-  try { localStorage.setItem(ck, JSON.stringify(out)); } catch (e) { /* ignore */ }
-  return out;
+  cutCache[ck] = cuts;
+  try { localStorage.setItem(ck, JSON.stringify(cuts)); } catch (e) { /* ignore */ }
+  return cuts;
 }
 
 function screenPractice(params) {
@@ -940,7 +929,7 @@ function screenPractice(params) {
       const tokens = ayahTokens(params.s, a);
       if (tokens.filter((t) => t.c).length > 4) {
         try {
-          cuts = await Promise.race([audioCuts(params.s, a, tokens, T && T[params.s + ':' + a]), sleep(9000).then(() => null)]);
+          cuts = await Promise.race([audioCuts(params.s, a, tokens, T && T[params.s + ':' + a]), sleep(25000).then(() => null)]);
         } catch (e) {
           cuts = null;
         }
@@ -1216,6 +1205,8 @@ function buildPractice(params, T, rid, cuts) {
     lastScript = '';
     $('#result').innerHTML = '';
     drawAyah();
+    beep(880, 0.12);
+    await sleep(180);
     try {
       await startListening(onScript);
     } catch (e) {
@@ -1276,6 +1267,18 @@ function buildPractice(params, T, rid, cuts) {
     evaluate();
   }
 
+  function tajweedCheck(ref) {
+    if (db.settings.tajweedCheck === false || !lastScript) return '';
+    const items = ref.map((ti, k) => ({ sk: skel[ti], flags: flagsOf(tokens[ti]), last: k === ref.length - 1 }));
+    let notes;
+    try { notes = tajweedNotes(items, lastScript); } catch (e) { return ''; }
+    const list = [];
+    ref.forEach((ti, k) => { const st = statuses[ti]; if ((st === 'ok' || st === 'near') && notes[k] && notes[k].length) list.push({ ti, msgs: notes[k] }); });
+    if (!list.length) return '';
+    setTimeout(() => list.forEach((n) => { const el = $('#ayah [data-i="' + n.ti + '"]'); if (el) el.classList.add('tjn'); }), 0);
+    return '<div class="tj-notes"><b>ملاحظات التجويد</b>' + list.map((n) => '<div class="tj-row"><span class="q">' + tokens[n.ti].html + '</span><small>' + n.msgs.join('، ') + '</small></div>').join('') + '</div>';
+  }
+
   function evaluate() {
     const ref = refIdx();
     let pts = 0;
@@ -1290,10 +1293,19 @@ function buildPractice(params, T, rid, cuts) {
     const pass = score >= passMark(p);
     drawAyah();
     if (mode === 'learn') {
-      if (pass) { stepPassed(score); return; }
+      const tjn = tajweedCheck(ref);
+      if (pass) {
+        if (tjn) {
+          $('#result').innerHTML = '<div class="result pass"><b>' + pick(PRAISE) + '</b>' + tjn + '<button class="primary" id="goOn">كمّل</button></div>';
+          $('#goOn').onclick = () => { $('#result').innerHTML = ''; stepPassed(score); };
+          return;
+        }
+        stepPassed(score);
+        return;
+      }
       const canListen = stepsOf(stage()).includes('listen');
       $('#result').innerHTML = resultCard(false, score, statuses, ref,
-        '<button class="primary" id="again">جرّب تاني</button>' + (canListen ? '<button class="light-btn" id="hear">اسمع ' + unit() + ' تاني</button>' : ''));
+        (tjn || '') + '<button class="primary" id="again">جرّب تاني</button>' + (canListen ? '<button class="light-btn" id="hear">اسمع ' + unit() + ' تاني</button>' : ''));
       $('#again').onclick = () => { $('#result').innerHTML = ''; startListen(); };
       const hr = $('#hear'); if (hr) hr.onclick = () => setStep('listen');
       setStatus('راجع الكلمات الملونة وحاول مرة أخرى، وفقك الله');
@@ -1449,6 +1461,8 @@ function screenRecite(params) {
     try { await initEngine(); } catch (e) { busy = false; setStatus('تعذر تشغيل المصحح على الموبايل ده'); showError(e); return; }
     busy = false;
     if (!alive()) return;
+    beep(880, 0.12);
+    await sleep(180);
     try { await startListening(onScript); } catch (e) { toast('محتاجين إذن المايك عشان نسمع التلاوة'); return; }
     if (!alive()) { stopListening(); return; }
     listening = true;
@@ -1996,6 +2010,7 @@ function screenSettings() {
     '<section class="card"><h2>النسخة الاحتياطية</h2><p class="muted small">احفظ تقدمك كله في ملف، وتقدر ترجّعه على أي موبايل.</p>' +
     '<button class="light-btn" id="exp">حفظ نسخة احتياطية</button><button class="light-btn" id="imp">استرجاع نسخة</button>' +
     '<input type="file" id="impFile" accept=".json,application/json" hidden></section>' +
+    '<section class="card"><h2>تصحيح التجويد</h2>' + seg('tjcSeg', ['on', 'off'], db.settings.tajweedCheck === false ? 'off' : 'on', (v) => (v === 'on' ? 'شغّال' : 'مقفول')) + '<p class="muted small">بعد ما تقرأ، بيوريك ملاحظات على المدود والإخفاء والإقلاب والقلقلة. ممكن يغلط، فارجع لشيخك في أي شك.</p></section>' +
     '<section class="card"><h2>مصحح التلاوة</h2><p class="muted small">شغال على الموبايل نفسه من غير إنترنت، وبيتابع قراءتك كلمة بكلمة. بيكتشف الكلمات الغلط والناقصة، ومش بديل عن الشيخ.</p></section>' +
     '<section class="card"><h2>الملف الشخصي</h2><button class="light-btn" id="switch">تغيير الملف</button>' +
     '<button class="danger-btn" id="del">حذف ملف ' + esc(p.name) + '</button></section></main>';
@@ -2021,6 +2036,7 @@ function screenSettings() {
   $$('input[name=reciter]').forEach((r) => { r.onchange = () => { p.reciter = r.value; save(); toast('تم تغيير القارئ'); }; });
   $$('#planSeg button').forEach((b) => { b.onclick = () => { p.plan = b.dataset.v; save(); render(history.state); }; });
   $('#family').onclick = () => go('family');
+  $$('#tjcSeg button').forEach((b) => { b.onclick = () => { db.settings.tajweedCheck = b.dataset.v === 'on'; save(); render(history.state); }; });
   $('#exp').onclick = () => exportBackup();
   $('#imp').onclick = () => $('#impFile').click();
   $('#impFile').onchange = (e) => importBackup(e.target.files && e.target.files[0]);
@@ -2263,6 +2279,40 @@ function qSimilar(params, pool) {
     '<p class="muted small center">البداية دي موجودة كمان في سورة ' + esc(QURAN[pr.s2 - 1].name) + '، فانتبه للتكملة</p>';
   const reveal = ws.slice(0, pr.k + 4).map((w, i) => '<span class="w' + (i >= pr.k ? ' ok' : '') + '">' + (i >= pr.k ? esc(w.plain) : w.html) + '</span>').join(' ') + (ws.length > pr.k + 4 ? ' …' : '');
   optionsQuiz(params, QUIZ.similar.title, body, shuffle(options), (o) => o.right, reveal, true);
+}
+
+let beepCtx = null;
+function beep(freq, dur) {
+  try {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!beepCtx) beepCtx = new C();
+    const ctx = beepCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  } catch (e) { /* ignore */ }
+}
+
+function flagsOf(t) {
+  const h = t.html;
+  return {
+    m6: h.includes('tj-madd6'),
+    m45: h.includes('tj-madd45'),
+    m2: h.includes('tj-madd2'),
+    f: h.includes('tj-f"'),
+    i: h.includes('tj-i"'),
+    q: h.includes('tj-qalqala')
+  };
 }
 
 function go(screen, params = {}, replace = false) {
