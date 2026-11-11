@@ -6,7 +6,7 @@ const ROOT = path.join(__dirname, '..');
 const DATA = path.join(ROOT, 'www', 'data');
 const FONTS = path.join(ROOT, 'www', 'fonts');
 const TMP = path.join(ROOT, '.tmp');
-const RECITERS = ['Minshawy_Murattal_128kbps', 'Husary_64kbps', 'Husary_Muallim_128kbps', 'Alafasy_128kbps'];
+const RECITERS = ['Minshawy_Murattal_128kbps', 'Husary_64kbps', 'Husary_Muallim_128kbps'];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

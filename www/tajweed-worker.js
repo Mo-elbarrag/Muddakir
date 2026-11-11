@@ -5,6 +5,7 @@ const NB = 201;
 const N_MELS = 80;
 const LEAD = 6400;
 const CAP = 16000 * 58;
+const KEEP = 16000 * 30;
 const BASE = self.location.href.replace(/[^/]*$/, '');
 
 let ortLib = null;
@@ -75,6 +76,13 @@ function reset() {
 }
 
 function append(samples) {
+  if (len + samples.length > CAP) {
+    const from = Math.max(LEAD, len - KEEP);
+    audio.copyWithin(LEAD, from, len);
+    audio.fill(0, 0, LEAD);
+    len = LEAD + (len - from);
+    cached = 0;
+  }
   const n = Math.min(samples.length, CAP - len);
   if (n <= 0) return;
   audio.set(samples.subarray(0, n), len);

@@ -39,7 +39,7 @@ function walk(dir, out = []) {
 function setupPermissions() {
   const manifest = path.join('android', 'app', 'src', 'main', 'AndroidManifest.xml');
   let xml = fs.readFileSync(manifest, 'utf8');
-  for (const p of ['android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.POST_NOTIFICATIONS']) {
+  for (const p of ['android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.POST_NOTIFICATIONS', 'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.RECEIVE_BOOT_COMPLETED']) {
     if (!xml.includes(p)) xml = xml.replace('<application', '<uses-permission android:name="' + p + '" />\n\n    <application');
   }
   fs.writeFileSync(manifest, xml);

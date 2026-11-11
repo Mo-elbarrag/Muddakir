@@ -198,3 +198,14 @@ body.dark .blank{border-bottom-color:#3A4760}
 .award small{color:var(--muted);font-size:11px;line-height:1.4;display:block}
 .award.off{opacity:.4}
 .tile.wide small{margin-inline-start:auto}
+html.dark,html.dark body{background:#0E1626}
+.rec-text{text-align:center}
+.w.tap{cursor:pointer;border-bottom:1px dashed var(--line);padding:0 3px;margin:0 1px}
+.w.picked{background:#F8E7E4;color:var(--bad)}
+body.dark .w.picked{background:#3E2222}
+.opt-btn.ui{font-family:inherit;font-size:17px;font-weight:600;line-height:1.6}
+.opt-btn.ayah{font-size:19px;line-height:2}
+.qtitle{text-align:center;font-weight:600;margin:14px 0 4px}
+.lesson-list{display:flex;flex-direction:column;gap:8px}
+.mini-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.mini-row:last-child{border-bottom:0}

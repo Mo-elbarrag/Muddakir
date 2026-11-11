@@ -1,11 +1,10 @@
 import { initEngine, isReady, startListening, stopListening, inferNow, refSkeleton, heardSkeleton, alignWords } from './recite.js';
-import { parseAyah, splitChunks, buildStages, LEGEND } from './quran.js';
+import { parseAyah, splitChunks, buildStages, meaningSegment, LEGEND } from './quran.js';
 
 const RECITERS = [
   { id: 'Minshawy_Murattal_128kbps', name: 'محمد صديق المنشاوي' },
   { id: 'Husary_64kbps', name: 'محمود خليل الحصري' },
-  { id: 'Husary_Muallim_128kbps', name: 'الحصري (المصحف المعلّم)' },
-  { id: 'Alafasy_128kbps', name: 'مشاري العفاسي' }
+  { id: 'Husary_Muallim_128kbps', name: 'الحصري (المصحف المعلّم)' }
 ];
 const REPEATS = [1, 3, 5, 7, 10];
 const GOALS = [1, 3, 5, 10, 20];
@@ -15,6 +14,16 @@ const PRAISE = ['ممتاز!', 'برافو عليك!', 'ما شاء الله!'];
 const KEY = 'muddakir-data-v1';
 const STAR = 'M880 512L772 619.7L772 772L619.7 772L512 880L404.3 772L252 772L252 619.7L144 512L252 404.3L252 252L404.3 252L512 144L619.7 252L772 252L772 404.3Z';
 const STAR8 = 'M12 2l2.9 4.1L20 4l-2.1 5.1L22 12l-4.1 2.9L20 20l-5.1-2.1L12 22l-2.9-4.1L4 20l2.1-5.1L2 12l4.1-2.9L4 4l5.1 2.1z';
+const QUIZ = {
+  arrange: { title: 'رتّب الكلمات', icon: 'shuffle', desc: 'رتّب كلمات الآية لحد علامة الوقف' },
+  complete: { title: 'أكمل الكلمة', icon: 'pencil', desc: 'اختار الكلمة الناقصة' },
+  nextWord: { title: 'إيه الكلمة الجاية؟', icon: 'chevronLeft', desc: 'كمّل الآية بالكلمة الصح' },
+  spot: { title: 'فين الكلمة الغلط؟', icon: 'search', desc: 'فيه كلمة متبدلة، لاقيها' },
+  tf: { title: 'صح ولا غلط؟', icon: 'check', desc: 'الآية مكتوبة صح؟' },
+  nextAyah: { title: 'إيه الآية الجاية؟', icon: 'arrowLeft', desc: 'اختار الآية اللي بعدها' },
+  order: { title: 'رتّب الآيات', icon: 'list', desc: 'رتّب الآيات بالترتيب الصح' },
+  connect: { title: 'وصّل', icon: 'link', desc: 'وصّل بداية كل آية بنهايتها' }
+};
 const MILESTONES = [
   { id: 'ayah1', title: 'أول آية', desc: 'بداية الطريق', test: (s) => s.mem >= 1 },
   { id: 'ayah10', title: '١٠ آيات', desc: 'حفظت ١٠ آيات', test: (s) => s.mem >= 10 },
@@ -44,6 +53,7 @@ const ICONS = {
   pause: 'M6 5h4v14h-4z M14 5h4v14h-4z',
   volume: 'M15 8a5 5 0 0 1 0 8 M17.7 5a9 9 0 0 1 0 14 M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5',
   arrowRight: 'M5 12l14 0 M13 18l6 -6 M13 6l6 6',
+  arrowLeft: 'M5 12l14 0 M5 12l6 6 M5 12l6 -6',
   chevronRight: 'M9 6l6 6l-6 6',
   chevronLeft: 'M15 6l-6 6l6 6',
   sliders: 'M4 8h4 M12 8h8 M10 6v4 M4 16h10 M18 16h2 M16 14v4',
@@ -54,7 +64,9 @@ const ICONS = {
   link: 'M9 15l6 -6 M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464 M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463',
   lock: 'M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-6z M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0 M8 11v-4a4 4 0 1 1 8 0v4',
   bulb: 'M3 12h1m8 -9v1m8 8h1m-15.4 -6.4l.7 .7m12.1 -.7l-.7 .7 M9 16a5 5 0 1 1 6 0a3.5 3.5 0 0 0 -1 3a2 2 0 0 1 -4 0a3.5 3.5 0 0 0 -1 -3 M9.7 17l4.6 0',
-  sparkle: 'M12 3l2 5l5 2l-5 2l-2 5l-2 -5l-5 -2l5 -2z'
+  sparkle: 'M12 3l2 5l5 2l-5 2l-2 5l-2 -5l-5 -2l5 -2z',
+  search: 'M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0 M21 21l-6 -6',
+  list: 'M9 6l11 0 M9 12l11 0 M9 18l11 0 M5 6l0 .01 M5 12l0 .01 M5 18l0 .01'
 };
 
 function icon(name, size = 22) {
@@ -81,6 +93,7 @@ const pad3 = (n) => String(n).padStart(3, '0');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const arDigits = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
+const range = (a, b) => { const r = []; for (let i = a; i <= b; i++) r.push(i); return r; };
 
 function shuffle(arr) {
   const a = arr.slice();
@@ -160,6 +173,8 @@ function ayahTokens(s, a) {
   return tokenCache.get(k);
 }
 
+const wordsOf = (s, a) => ayahTokens(s, a).filter((t) => t.c);
+
 function memorizedAyat(s) {
   const p = profile();
   const out = [];
@@ -182,6 +197,22 @@ function firstUnmemorized(s) {
   }
   return 1;
 }
+
+function lessonsOf(s) {
+  const len = QURAN[s - 1].ayat.length;
+  const out = [];
+  let from = 1;
+  let words = 0;
+  for (let a = 1; a <= len; a++) {
+    const w = wordsOf(s, a).length;
+    if (a > from && (words + w > 28 || a - from >= 5)) { out.push({ from, to: a - 1 }); from = a; words = 0; }
+    words += w;
+  }
+  out.push({ from, to: len });
+  return out;
+}
+
+const lessonOf = (s, a) => lessonsOf(s).find((l) => a >= l.from && a <= l.to) || { from: a, to: a };
 
 const todayCount = (p) => (p.daily && p.daily.d === dayKey() ? p.daily.n : 0);
 
@@ -258,7 +289,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 3200);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 3500);
 }
 
 function showError(e) {
@@ -310,40 +341,49 @@ function isDark() {
 
 function applyTheme() {
   const dark = isDark();
+  document.documentElement.classList.toggle('dark', dark);
   document.body.classList.toggle('dark', dark);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', dark ? '#0E1626' : '#F6F4EF');
 }
 
-async function scheduleReminders() {
+async function scheduleReminders(opts = {}) {
   const LN = capPlugin('LocalNotifications');
   const r = db.settings.reminder;
-  if (!LN) { if (r.on) toast('التذكير بيشتغل على الموبايل بس'); return false; }
-  try { await LN.cancel({ notifications: [1001, 1002, 1003, 1004, 1005, 1006, 1007].map((id) => ({ id })) }); } catch (e) { /* ignore */ }
-  if (!r.on) return true;
+  if (!LN) { if (!opts.silent) toast('الإشعارات مش متاحة على الجهاز ده'); return false; }
   try {
-    let perm = await LN.checkPermissions();
-    if (perm.display !== 'granted') perm = await LN.requestPermissions();
+    if (!opts.test) {
+      try { await LN.cancel({ notifications: [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007].map((id) => ({ id })) }); } catch (e) { /* ignore */ }
+      if (!r.on) return true;
+    }
+    const perm = opts.silent ? await LN.checkPermissions() : await LN.requestPermissions();
     if (perm.display !== 'granted') {
-      r.on = false;
-      save();
-      toast('لازم تسمح بالإشعارات من إعدادات الموبايل');
+      if (!opts.silent) toast('لازم تسمح بالإشعارات للتطبيق من إعدادات الموبايل');
+      if (!opts.test && !opts.silent) { r.on = false; save(); }
       return false;
     }
-    const [h, m] = String(r.time || '20:00').split(':').map(Number);
+    if (!opts.silent && LN.checkExactNotificationSetting) {
+      try {
+        const ex = await LN.checkExactNotificationSetting();
+        if (ex && ex.exact_alarm && ex.exact_alarm !== 'granted' && LN.changeExactNotificationSetting) {
+          toast('فعّل "التنبيهات والتذكيرات" للتطبيق عشان التذكير يوصل في معاده');
+          await LN.changeExactNotificationSetting();
+        }
+      } catch (e) { /* ignore */ }
+    }
     const name = (profile() && profile().name) || '';
-    await LN.schedule({
-      notifications: REMINDER_MSGS.map((body, i) => ({
-        id: 1001 + i,
-        title: 'مُدَّكِر',
-        body: body.replace('{name}', name).replace(' يا ،', '،'),
-        schedule: { on: { weekday: i + 1, hour: h, minute: m } }
-      }))
-    });
-    toast('التذكير اتظبط الساعة ' + r.time);
+    if (opts.test) {
+      await LN.schedule({ notifications: [{ id: 1999, title: 'مُدَّكِر', body: 'التذكير شغال تمام، بارك الله فيك', schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true } }] });
+      toast('هيوصلك إشعار تجربة بعد ٥ ثواني');
+      return true;
+    }
+    const [h, m] = String(r.time || '20:00').split(':').map(Number);
+    const body = pick(REMINDER_MSGS).replace('{name}', name);
+    await LN.schedule({ notifications: [{ id: 1000, title: 'مُدَّكِر', body, schedule: { on: { hour: h, minute: m }, allowWhileIdle: true } }] });
+    if (!opts.silent) toast('التذكير اتظبط كل يوم الساعة ' + r.time);
     return true;
   } catch (e) {
-    showError(e);
+    if (!opts.silent) toast('تعذر ظبط التذكير: ' + ((e && e.message) || e));
     return false;
   }
 }
@@ -456,14 +496,25 @@ function pausesFor(row, tokens) {
   if (!row) return null;
   const n = row[0];
   if (row.length < 1 + 2 * n) return null;
-  const words = [];
-  tokens.forEach((t, i) => { if (t.c) words.push(i); });
-  if (n !== tokens.length && n !== words.length) return null;
   const map = rowMapper(n, tokens);
   const st = row.slice(1, 1 + n);
   const en = row.slice(1 + n, 1 + 2 * n);
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  const rates = [];
+  words.forEach((ti) => { const k = map(ti); const d = en[k] - st[k]; if (d > 0) rates.push(d / Math.max(1, tokens[ti].c.length)); });
+  if (!rates.length) return null;
+  rates.sort((x, y) => x - y);
+  const rate = rates[Math.floor(rates.length / 2)];
   const out = new Array(tokens.length).fill(null);
-  for (let k = 0; k + 1 < words.length; k++) out[words[k]] = st[map(words[k + 1])] - en[map(words[k])];
+  for (let k = 0; k + 1 < words.length; k++) {
+    const a = map(words[k]);
+    const b = map(words[k + 1]);
+    const gap = a === b ? 0 : Math.max(0, st[b] - en[a]);
+    const dur = en[a] - st[a];
+    const expected = rate * Math.max(1, tokens[words[k]].c.length);
+    out[words[k]] = gap + Math.max(0, dur - 1.8 * expected);
+  }
   return out;
 }
 
@@ -503,7 +554,7 @@ function playClip(url, clip, onWord, token) {
     player = au;
     let finished = false;
     let raf = 0;
-    let range = null;
+    let rng = null;
     const done = (ok) => {
       if (finished) return;
       finished = true;
@@ -520,19 +571,19 @@ function playClip(url, clip, onWord, token) {
     const tick = () => {
       if (finished) return;
       const t = au.currentTime;
-      if (range) {
-        if (range.words && range.words.length) {
+      if (rng) {
+        if (rng.words && rng.words.length) {
           let cur = -1;
-          for (const w of range.words) if (t + 0.05 >= w.t) cur = w.i;
+          for (const w of rng.words) if (t + 0.05 >= w.t) cur = w.i;
           onWord(cur);
         }
-        if (range.end && t >= range.end) { done(true); return; }
+        if (rng.end && t >= rng.end) { done(true); return; }
       }
       raf = requestAnimationFrame(tick);
     };
     au.onloadedmetadata = () => {
-      range = clip(au.duration);
-      if (range && range.start > 0) { try { au.currentTime = range.start; } catch (e) { /* ignore */ } }
+      rng = clip(au.duration);
+      if (rng && rng.start > 0) { try { au.currentTime = rng.start; } catch (e) { /* ignore */ } }
       au.play().then(() => { raf = requestAnimationFrame(tick); }).catch(() => done(false));
     };
     au.onended = () => done(true);
@@ -711,11 +762,39 @@ function screenSurahs() {
         '</span><div class="track"><i class="' + (full ? 'full' : '') + '" style="width:' + Math.round((m * 100) / total) + '%"></i></div></div>' +
         (full ? '<span class="done">' + icon('check', 18) + '</span>' : '<span class="muted small">' + m + '/' + total + '</span>') + '</button>';
     }).join('');
-    $$('#slist .row').forEach((b) => { b.onclick = () => { const s = +b.dataset.s; go('practice', { s, a: firstUnmemorized(s) }); }; });
+    $$('#slist .row').forEach((b) => { b.onclick = () => go('surah', { s: +b.dataset.s }); });
   };
   $$('#chips .chip').forEach((c) => { c.onclick = () => { filter = c.dataset.f; $('#q').value = ''; draw(); }; });
   $('#q').oninput = draw;
   draw();
+}
+
+function screenSurah(params) {
+  const s = params.s;
+  const sura = QURAN[s - 1];
+  if (!sura) { go('home', {}, true); return; }
+  const lessons = lessonsOf(s);
+  const p = profile();
+  const memSet = new Set(memorizedAyat(s));
+  const next = firstUnmemorized(s);
+  app.innerHTML = topBar('سورة ' + sura.name, true) + '<main class="wrap">' +
+    '<section class="wird"><div class="wird-in"><div class="wird-top"><span>' + arDigits(lessons.length) + ' دروس</span><span>' + arDigits(memSet.size) + ' / ' + arDigits(sura.ayat.length) + '</span></div>' +
+    '<b>' + (memSet.size === sura.ayat.length ? 'ختمت حفظ السورة، ما شاء الله' : 'كمّل من آية ' + arDigits(next)) + '</b>' +
+    '<button class="gold-btn" id="go">' + (memSet.size ? 'كمّل الحفظ' : 'ابدأ أول درس') + '</button></div></section>' +
+    divider() + '<div class="lesson-list">' + lessons.map((l, i) => {
+      const n = l.to - l.from + 1;
+      let m = 0;
+      for (let a = l.from; a <= l.to; a++) if (memSet.has(a)) m++;
+      const full = m === n;
+      return '<button class="row" data-a="' + l.from + '">' + starBadge(arDigits(i + 1), full) + '<div class="grow"><b>الدرس ' + arDigits(i + 1) + '</b><small>' +
+        (n === 1 ? 'آية ' + arDigits(l.from) : 'آيات ' + arDigits(l.from) + ' – ' + arDigits(l.to)) + '</small></div>' +
+        (full ? '<span class="done">' + icon('check', 18) + '</span>' : '<span class="muted small">' + m + '/' + n + '</span>') + '</button>';
+    }).join('') + '</div>' +
+    (memSet.size ? '<button class="light-btn" id="reciteAll">سمّع السورة كاملة من الذاكرة</button>' : '') + '</main>';
+  $('#go').onclick = () => go('practice', { s, a: next }, true);
+  $$('.lesson-list .row').forEach((b) => { b.onclick = () => go('practice', { s, a: +b.dataset.a }); });
+  const ra = $('#reciteAll'); if (ra) ra.onclick = () => go('recite', { s, from: 1, to: sura.ayat.length, purpose: 'surah' });
+  void p;
 }
 
 function screenPractice(params) {
@@ -725,6 +804,14 @@ function screenPractice(params) {
   app.innerHTML = topBar('سورة ' + sura.name, true) + '<main class="wrap"><p class="muted center">جاري التحضير…</p></main>';
   initEngine().catch(() => {});
   getTimings(reciterId(profile())).then((T) => { if (rid === renderSeq) buildPractice(params, T, rid); });
+}
+
+function startQuizChain(s, from, to) {
+  const n = to - from + 1;
+  const list = ['arrange', 'complete', 'nextWord', 'spot', 'tf'];
+  if (n >= 2) { list.splice(3, 0, 'nextAyah'); list.push('order'); }
+  if (n >= 3) list.push('connect');
+  go('quiz', { s, kind: list[0], chain: { list, i: 0, from, to } }, true);
 }
 
 function buildPractice(params, T, rid) {
@@ -740,6 +827,7 @@ function buildPractice(params, T, rid) {
   const row = T && T[s + ':' + a];
   const st0 = p.ayat[key(s, a)];
   const last = a === sura.ayat.length;
+  const L = lessonOf(s, a);
   const stages = mode === 'learn' ? buildStages(splitChunks(tokens, pausesFor(row, tokens))) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
   const stepsOf = (stg) => (stg.kind === 'learn' ? ['listen', 'read', 'memory'] : stg.kind === 'link' ? ['listen', 'memory'] : ['memory']);
   let si = 0;
@@ -787,9 +875,11 @@ function buildPractice(params, T, rid) {
   function drawMeta() {
     const stg = stage();
     let sub;
-    if (mode === 'learn') sub = 'آية ' + arDigits(a) + (stages.length > 1 ? ' · المرحلة ' + arDigits(si + 1) + ' من ' + arDigits(stages.length) + (stg.kind === 'link' ? ' · ربط' : stg.kind === 'full' ? ' · الآية كاملة' : '') : '');
-    else if (mode === 'review') sub = 'سورة ' + sura.name + ' · آية ' + arDigits(a) + ' · باقي ' + arDigits(remaining);
-    else sub = 'تسميع السورة · آية ' + arDigits(a) + ' من ' + arDigits(sura.ayat.length);
+    if (mode === 'learn') {
+      const ln = L.to > L.from ? 'درس ' + arDigits(L.from) + '–' + arDigits(L.to) + ' · ' : '';
+      sub = ln + 'آية ' + arDigits(a) + (stages.length > 1 ? ' · المرحلة ' + arDigits(si + 1) + ' من ' + arDigits(stages.length) + (stg.kind === 'link' ? ' · ربط' : stg.kind === 'full' ? ' · كاملة' : '') : '');
+    } else if (mode === 'review') sub = 'سورة ' + sura.name + ' · آية ' + arDigits(a) + ' · باقي ' + arDigits(remaining);
+    else sub = 'آية ' + arDigits(a) + ' من ' + arDigits(sura.ayat.length);
     $('#sub').textContent = sub;
     const bar = $('#stagebar');
     if (bar) Array.from(bar.children).forEach((x, i) => { x.className = i < si ? 'd' : i === si ? 'c' : ''; });
@@ -1056,17 +1146,524 @@ function buildPractice(params, T, rid) {
     $('#ctrls').innerHTML = '';
     setStatus('');
     confettiBurst();
+    let mainLabel;
+    let mainAct;
+    if (a < L.to) {
+      if (a > L.from) {
+        mainLabel = 'اربط الآيات من ' + arDigits(L.from) + ' لـ ' + arDigits(a);
+        mainAct = () => go('recite', { s, from: L.from, to: a, purpose: 'link', nextA: a + 1 }, true);
+      } else {
+        mainLabel = 'الآية التالية';
+        mainAct = () => go('practice', { s, a: a + 1 }, true);
+      }
+    } else if (L.to > L.from) {
+      mainLabel = 'سمّع الدرس كامل';
+      mainAct = () => go('recite', { s, from: L.from, to: L.to, purpose: 'lesson' }, true);
+    } else {
+      mainLabel = 'يلا على الاختبارات';
+      mainAct = () => startQuizChain(s, L.from, L.to);
+    }
     $('#result').innerHTML = '<div class="result pass"><div class="score">' + score + '%</div><b>' + (kids ? 'ما شاء الله! حفظت الآية' : 'حفظت الآية كاملة') + '</b>' +
-      '<small>هترجعلك للمراجعة بكرة</small><button class="primary" id="nextAy">' + (last ? 'خلّصت السورة' : 'الآية التالية') + '</button>' +
-      '<button class="light-btn" id="acts">أنشطة على الآية</button>' +
+      '<small>هترجعلك للمراجعة بكرة</small><button class="primary" id="mainAct">' + mainLabel + '</button>' +
       (a > 1 ? '<button class="link-btn" id="prevAy">الآية السابقة</button>' : '') + '</div>';
-    $('#acts').onclick = () => go('game', { s, a, kind: 'arrange', chain: true });
-    $('#nextAy').onclick = onNext;
+    $('#mainAct').onclick = mainAct;
     const pv = $('#prevAy'); if (pv) pv.onclick = () => go('practice', { s, a: a - 1, mode }, true);
   }
 
   drawAll();
   if (mode !== 'learn') setTimeout(() => { if (alive()) startListen(); }, 500);
+}
+
+function screenRecite(params) {
+  const s = params.s;
+  const sura = QURAN[s - 1];
+  if (!sura) { go('home', {}, true); return; }
+  const rid = renderSeq;
+  const alive = () => rid === renderSeq;
+  initEngine().catch(() => {});
+  const from = params.from;
+  const to = params.to;
+  const purpose = params.purpose;
+  const p = profile();
+  const items = [];
+  const gIdx = {};
+  for (let a = from; a <= to; a++) {
+    gIdx[a] = {};
+    ayahTokens(s, a).forEach((t, i) => { if (t.c) { gIdx[a][i] = items.length; items.push({ a, i, sk: refSkeleton(t.plain) }); } });
+  }
+  const status = new Array(items.length).fill(null);
+  let anchor = 0;
+  let listening = false;
+  let busy = false;
+  let lastScript = '';
+  let done = false;
+  const title = purpose === 'surah' ? 'تسميع سورة ' + sura.name : purpose === 'link' ? 'ربط الآيات' : 'سمّع الدرس كامل';
+  app.innerHTML = '<header class="top"><button class="ibtn" data-back aria-label="رجوع">' + icon('arrowRight') + '</button>' +
+    '<div class="ttl center"><b class="qf">' + esc(title) + '</b><small>' + (from === to ? 'آية ' + arDigits(from) : 'آيات ' + arDigits(from) + ' – ' + arDigits(to)) + '</small></div>' + brandMark(28) + '</header>' +
+    '<main class="wrap"><div class="stagebar"><i id="rbar" class="c" style="flex:0"></i><i style="flex:1" id="rrest"></i></div>' +
+    '<div class="frame"><div class="frame-in q rec-text" id="rtext"></div></div>' +
+    '<p class="status-line" id="statusLine"></p><div class="ctrls" id="ctrls"></div><div id="result"></div></main>';
+  const setStatus = (t, live) => { const el = $('#statusLine'); if (el) { el.textContent = t; el.classList.toggle('live', !!live); } };
+  const firstOpen = () => { const k = status.findIndex((x) => !x); return k < 0 ? items.length : k; };
+
+  function draw() {
+    const cur = Math.min(items.length - 1, Math.max(0, anchor));
+    const curA = items.length ? items[cur].a : from;
+    const showFrom = purpose === 'surah' ? Math.max(from, curA - 1) : from;
+    const showTo = purpose === 'surah' ? Math.min(to, curA + 3) : to;
+    let h = '';
+    for (let a = showFrom; a <= showTo; a++) {
+      h += ayahTokens(s, a).map((t, i) => {
+        if (!t.c) return '<span class="mark">' + esc(t.plain) + '</span>';
+        const g = gIdx[a][i];
+        const st = status[g];
+        if (st) return '<span class="w ' + st + '">' + esc(t.plain) + '</span>';
+        const width = Math.min(5, Math.max(1.4, t.c.length * 0.5));
+        return '<span class="w"><span class="blank" style="width:' + width + 'em"></span></span>';
+      }).join(' ') + ' <span class="anum">﴿' + arDigits(a) + '﴾</span> ';
+    }
+    $('#rtext').innerHTML = h;
+    const doneN = status.filter(Boolean).length;
+    $('#rbar').style.flex = String(doneN);
+    $('#rrest').style.flex = String(Math.max(0, items.length - doneN));
+  }
+
+  const btn = (id, ic, label, cls) => '<div class="bt ' + (cls || '') + '"><button id="' + id + '" aria-label="' + label + '">' + icon(ic, 19) + '</button><small id="' + id + 'Lbl">' + label + '</small></div>';
+  function drawControls() {
+    $('#ctrls').innerHTML = btn('mic', listening ? 'pause' : 'mic', listening ? 'بسمعك' : 'سمّع', 'mic' + (listening ? ' listening' : '')) + btn('hint', 'bulb', 'مساعدة', 'hint');
+    $('#mic').onclick = () => { if (busy) return; if (listening) finish(false); else start(); };
+    $('#hint').onclick = () => {
+      const k = firstOpen();
+      if (k >= items.length) return;
+      status[k] = 'hint';
+      anchor = Math.max(anchor, k + 1);
+      draw();
+      if (status.every(Boolean)) finish(true);
+    };
+  }
+
+  async function start() {
+    if (listening || busy || done || !alive()) return;
+    busy = true;
+    if (!isReady()) setStatus('بجهّز المصحح…');
+    try { await initEngine(); } catch (e) { busy = false; setStatus('تعذر تشغيل المصحح على الموبايل ده'); showError(e); return; }
+    busy = false;
+    if (!alive()) return;
+    try { await startListening(onScript); } catch (e) { toast('محتاجين إذن المايك عشان نسمع التلاوة'); return; }
+    if (!alive()) { stopListening(); return; }
+    listening = true;
+    drawControls();
+    setStatus('اقرأ من الذاكرة من غير ما توقف، والكلمات هتظهر وانت بتقرأ', true);
+  }
+
+  function onScript(script) {
+    if (!listening || !alive()) return;
+    lastScript = script;
+    const lo = Math.max(0, anchor - 8);
+    const hi = Math.min(items.length, anchor + 40);
+    const res = alignWords(items.slice(lo, hi).map((x) => x.sk), heardSkeleton(script), false);
+    let changed = false;
+    res.forEach((r, k) => {
+      const g = lo + k;
+      if (!r.done) return;
+      const st = r.ratio >= 0.7 ? 'ok' : r.ratio >= 0.5 ? 'near' : null;
+      if (st && status[g] !== 'ok' && status[g] !== 'hint' && status[g] !== st) { status[g] = st; changed = true; anchor = Math.max(anchor, g + 1); }
+    });
+    if (changed) draw();
+    if (status.every(Boolean)) finish(true);
+  }
+
+  async function finish(complete) {
+    if (done) return;
+    if (listening) { listening = false; stopListening(); }
+    if (!complete) {
+      busy = true;
+      setStatus('لحظة…');
+      const sc = await inferNow();
+      busy = false;
+      if (!alive()) return;
+      if (sc) lastScript = sc;
+      const lo = Math.max(0, anchor - 8);
+      const hi = Math.min(items.length, anchor + 40);
+      const res = alignWords(items.slice(lo, hi).map((x) => x.sk), heardSkeleton(lastScript), false);
+      res.forEach((r, k) => { const g = lo + k; if (r.done && r.ratio >= 0.7 && !status[g]) status[g] = 'ok'; });
+    }
+    done = true;
+    for (let g = 0; g < items.length; g++) if (!status[g]) status[g] = 'miss';
+    const per = {};
+    items.forEach((it, g) => {
+      per[it.a] = per[it.a] || { pts: 0, n: 0 };
+      const x = status[g];
+      per[it.a].n++;
+      per[it.a].pts += x === 'ok' ? 1 : x === 'near' ? 0.75 : x === 'hint' ? 0.5 : 0;
+    });
+    let tp = 0;
+    let tn = 0;
+    const weak = [];
+    Object.keys(per).forEach((a) => {
+      const sc = Math.round((per[a].pts * 100) / per[a].n);
+      tp += per[a].pts;
+      tn += per[a].n;
+      if (sc < passMark(p)) weak.push({ a: +a, sc });
+      if (purpose === 'surah') {
+        const st = p.ayat[key(s, +a)];
+        if (st && st.lvl >= 1) applyResult(s, +a, sc, true);
+      }
+    });
+    const score = tn ? Math.round((tp * 100) / tn) : 0;
+    const pass = score >= passMark(p);
+    anchor = 0;
+    if (purpose === 'surah') {
+      for (let g = 0; g < items.length; g++) status[g] = status[g] || 'miss';
+    }
+    $('#rtext').innerHTML = range(from, to).map((a) => ayahTokens(s, a).map((t, i) => {
+      if (!t.c) return '<span class="mark">' + esc(t.plain) + '</span>';
+      return '<span class="w ' + status[gIdx[a][i]] + '">' + esc(t.plain) + '</span>';
+    }).join(' ') + ' <span class="anum">﴿' + arDigits(a) + '﴾</span>').join(' ');
+    drawControls();
+    $('#ctrls').innerHTML = '';
+    setStatus('');
+    if (pass) confettiBurst();
+    let btns = '';
+    if (purpose === 'link') btns = pass ? '<button class="primary" id="cont">كمّل: الآية ' + arDigits(params.nextA) + '</button>' : '<button class="primary" id="retry">جرّب تاني</button><button class="light-btn" id="cont">كمّل برضه</button>';
+    else if (purpose === 'lesson') btns = pass ? '<button class="primary" id="cont">يلا على الاختبارات</button>' : '<button class="primary" id="retry">جرّب تاني</button><button class="light-btn" id="cont">كمّل على الاختبارات</button>';
+    else btns = '<button class="primary" id="retry">سمّع تاني</button><button class="light-btn" data-back>رجوع</button>';
+    $('#result').innerHTML = '<div class="result ' + (pass ? 'pass' : 'fail') + '"><div class="score">' + score + '%</div><b>' + (pass ? 'ما شاء الله' : 'محتاج مراجعة شوية') + '</b>' +
+      (weak.length ? '<div class="card" style="margin-top:10px;text-align:start">' + weak.map((w) => '<div class="mini-row"><span>آية ' + arDigits(w.a) + '</span><span class="near">' + w.sc + '%</span></div>').join('') + '</div>' : '') + btns + '</div>';
+    const c = $('#cont');
+    if (c) c.onclick = () => { if (purpose === 'link') go('practice', { s, a: params.nextA }, true); else startQuizChain(s, from, to); };
+    const r = $('#retry'); if (r) r.onclick = () => render(history.state);
+  }
+
+  draw();
+  drawControls();
+  setStatus('دوس سمّع واقرأ من الذاكرة من غير ما توقف');
+  setTimeout(() => { if (alive()) start(); }, 500);
+}
+
+function distractors(s, exclude, count, nearLen) {
+  const pool = new Map();
+  const add = (ss) => {
+    const len = QURAN[ss - 1].ayat.length;
+    for (let ai = 1; ai <= len; ai++) wordsOf(ss, ai).forEach((w) => { if (w.c.length >= 2 && !exclude.has(w.c) && !pool.has(w.c)) pool.set(w.c, w); });
+  };
+  add(s);
+  if (pool.size < count + 3) add(s === 114 ? 113 : s + 1);
+  if (pool.size < count + 3) add(1);
+  let arr = Array.from(pool.values());
+  if (nearLen) { const near = arr.filter((w) => Math.abs(w.c.length - nearLen) <= 1); if (near.length >= count) arr = near; }
+  return shuffle(arr).slice(0, count);
+}
+
+function poolOf(params) {
+  if (params.chain) return range(params.chain.from, params.chain.to);
+  return memorizedAyat(params.s);
+}
+
+function quizAvailable(kind, pool, s) {
+  const set = new Set(pool);
+  const len = QURAN[s - 1].ayat.length;
+  if (!pool.length) return false;
+  if (kind === 'nextAyah' || kind === 'order') return pool.some((a) => a < len && set.has(a + 1));
+  if (kind === 'connect') return pool.filter((a) => wordsOf(s, a).length >= 2).length >= 3;
+  return true;
+}
+
+function quizShell(params, title) {
+  const sura = QURAN[params.s - 1];
+  const ch = params.chain;
+  app.innerHTML = topBar(title, true) + '<main class="wrap"><p class="muted small center">سورة ' + esc(sura.name) +
+    (ch ? ' · اختبار ' + arDigits(ch.i + 1) + ' من ' + arDigits(ch.list.length) : '') + '</p><div id="qbody"></div><div id="result"></div></main>';
+}
+
+function quizDone(params, right, msg) {
+  if (right) confettiBurst();
+  const ch = params.chain;
+  let label;
+  if (ch) label = ch.i + 1 < ch.list.length ? 'التالي (' + arDigits(ch.i + 2) + ' من ' + arDigits(ch.list.length) + ')' : 'خلّصت الدرس';
+  else label = 'سؤال تاني';
+  $('#result').innerHTML = '<div class="result ' + (right ? 'pass' : 'fail') + '"><b>' + msg + '</b><button class="primary" id="qnext">' + label + '</button></div>';
+  $('#qnext').onclick = () => {
+    if (ch) {
+      const nx = ch.i + 1;
+      if (nx < ch.list.length) go('quiz', { s: params.s, kind: ch.list[nx], chain: Object.assign({}, ch, { i: nx }) }, true);
+      else go('lessonDone', { s: params.s, from: ch.from, to: ch.to }, true);
+    } else go('quiz', { s: params.s, kind: params.kind }, true);
+  };
+}
+
+function screenQuiz(params) {
+  const s = params.s;
+  if (!QURAN[s - 1]) { go('home', {}, true); return; }
+  const pool = poolOf(params);
+  if (!quizAvailable(params.kind, pool, s)) {
+    if (params.chain) { quizDone(Object.assign({}, params), true, ''); return; }
+    lockedScreen(QUIZ[params.kind].title, 'احفظ آيات أكتر من السورة عشان النشاط ده يتفتح');
+    return;
+  }
+  const fn = { arrange: qArrange, complete: qComplete, nextWord: qNextWord, spot: qSpot, tf: qTF, nextAyah: qNextAyah, order: qOrder, connect: qConnect }[params.kind] || qArrange;
+  fn(params, pool);
+}
+
+function qArrange(params, pool) {
+  const s = params.s;
+  const a = pick(pool);
+  const tokens = ayahTokens(s, a);
+  const [f, t] = meaningSegment(tokens);
+  const target = [];
+  for (let i = f; i <= t; i++) if (tokens[i].c) target.push(tokens[i]);
+  const chips = shuffle(target);
+  let pos = 0;
+  let errors = 0;
+  quizShell(params, QUIZ.arrange.title);
+  $('#qbody').innerHTML = '<p class="center small muted">آية ' + arDigits(a) + (f > 0 || t < tokens.length - 1 ? ' · لحد علامة الوقف' : '') + '</p>' +
+    '<div class="frame"><div class="frame-in q answer" id="answer"></div></div><div class="wchips">' +
+    chips.map((w, j) => '<button class="wchip" data-j="' + j + '">' + w.html + '</button>').join('') + '</div>';
+  $$('.wchip').forEach((b) => {
+    b.onclick = () => {
+      if (pos >= target.length) return;
+      const w = chips[+b.dataset.j];
+      if (w.c === target[pos].c) {
+        b.disabled = true;
+        b.classList.add('used');
+        $('#answer').insertAdjacentHTML('beforeend', '<span class="w">' + w.html + '</span> ');
+        pos++;
+        if (pos === target.length) quizDone(params, errors <= 1, errors ? 'أحسنت، رتّبتها' : 'ممتاز، من غير ولا غلطة');
+      } else {
+        errors++;
+        b.classList.add('wrong');
+        setTimeout(() => b.classList.remove('wrong'), 500);
+      }
+    };
+  });
+}
+
+function optionsQuiz(params, title, bodyHtml, options, isRight, revealHtml, wide) {
+  quizShell(params, title);
+  $('#qbody').innerHTML = bodyHtml + '<div class="opts">' + options.map((o, i) => '<button class="opt-btn' + (wide ? ' ayah' : '') + '" data-i="' + i + '"' + (wide ? ' style="grid-column:span 2"' : '') + '>' + o.html + '</button>').join('') + '</div>';
+  let answered = false;
+  $$('.opt-btn').forEach((b) => {
+    b.onclick = () => {
+      if (answered) return;
+      answered = true;
+      const right = isRight(options[+b.dataset.i]);
+      $$('.opt-btn').forEach((x) => { if (isRight(options[+x.dataset.i])) x.classList.add('right'); });
+      if (!right) b.classList.add('wrong');
+      if (revealHtml) { const fr = $('#qframe'); if (fr) fr.innerHTML = revealHtml; }
+      quizDone(params, right, right ? 'إجابة صح' : 'الإجابة الصح باللون الأخضر');
+    };
+  });
+}
+
+function qComplete(params, pool) {
+  const s = params.s;
+  const a = pick(pool);
+  const ws = wordsOf(s, a);
+  const cand = ws.map((w, i) => i).filter((i) => ws[i].c.length >= 2);
+  const mi = cand.length ? pick(cand) : 0;
+  const ans = ws[mi];
+  const opts = shuffle([ans].concat(distractors(s, new Set([ans.c]), 3, ans.c.length)));
+  const body = '<p class="center small muted">آية ' + arDigits(a) + '</p><div class="frame"><div class="frame-in q answer" id="qframe">' +
+    ws.map((w, i) => (i === mi ? '<span class="blank" style="width:3em"></span>' : '<span class="w">' + w.html + '</span>')).join(' ') + '</div></div>';
+  const reveal = ws.map((w, i) => '<span class="w' + (i === mi ? ' ok' : '') + '">' + (i === mi ? esc(w.plain) : w.html) + '</span>').join(' ');
+  optionsQuiz(params, QUIZ.complete.title, body, opts, (o) => o.c === ans.c, reveal);
+}
+
+function qNextWord(params, pool) {
+  const s = params.s;
+  let cands = pool.filter((a) => wordsOf(s, a).length >= 3);
+  if (!cands.length) cands = pool;
+  const a = pick(cands);
+  const ws = wordsOf(s, a);
+  const k = ws.length >= 2 ? 1 + Math.floor(Math.random() * (ws.length - 1)) : 0;
+  const ans = ws[k];
+  const opts = shuffle([ans].concat(distractors(s, new Set([ans.c]), 3, ans.c.length)));
+  const body = '<p class="qtitle">إيه الكلمة الجاية؟</p><div class="frame"><div class="frame-in q answer" id="qframe">' +
+    ws.slice(0, k).map((w) => '<span class="w">' + w.html + '</span>').join(' ') + ' <span class="blank" style="width:2.6em"></span></div></div>';
+  const reveal = ws.slice(0, k + 1).map((w, i) => '<span class="w' + (i === k ? ' ok' : '') + '">' + (i === k ? esc(w.plain) : w.html) + '</span>').join(' ') + ' …';
+  optionsQuiz(params, QUIZ.nextWord.title, body, opts, (o) => o.c === ans.c, reveal);
+}
+
+function qSpot(params, pool) {
+  const s = params.s;
+  let cands = pool.filter((a) => wordsOf(s, a).length >= 3);
+  if (!cands.length) cands = pool;
+  const a = pick(cands);
+  const ws = wordsOf(s, a);
+  const idxs = ws.map((w, i) => i).filter((i) => ws[i].c.length >= 3);
+  const wi = idxs.length ? pick(idxs) : 0;
+  const fake = distractors(s, new Set(ws.map((w) => w.c)), 1, ws[wi].c.length)[0] || ws[wi];
+  quizShell(params, QUIZ.spot.title);
+  $('#qbody').innerHTML = '<p class="qtitle">دوس على الكلمة الغلط</p><div class="frame"><div class="frame-in q answer" id="qframe">' +
+    ws.map((w, i) => '<button class="w tap" data-i="' + i + '">' + (i === wi ? fake.html : w.html) + '</button>').join(' ') + '</div></div>';
+  let answered = false;
+  $$('#qframe .tap').forEach((b) => {
+    b.onclick = () => {
+      if (answered) return;
+      answered = true;
+      const right = +b.dataset.i === wi;
+      if (!right) b.classList.add('picked');
+      const t = $('#qframe [data-i="' + wi + '"]');
+      if (t) { t.classList.add('ok'); t.textContent = ws[wi].plain; }
+      quizDone(params, right, right ? 'صح، دي الكلمة اللي اتبدلت' : 'الكلمة الصح ظاهرة باللون الأخضر');
+    };
+  });
+}
+
+function qTF(params, pool) {
+  const s = params.s;
+  const a = pick(pool);
+  const ws = wordsOf(s, a);
+  let isCorrect = Math.random() < 0.5 || ws.length < 2;
+  let wi = -1;
+  let fake = null;
+  if (!isCorrect) {
+    const idxs = ws.map((w, i) => i).filter((i) => ws[i].c.length >= 3);
+    wi = idxs.length ? pick(idxs) : 0;
+    fake = distractors(s, new Set(ws.map((w) => w.c)), 1, ws[wi].c.length)[0];
+    if (!fake) isCorrect = true;
+  }
+  const shown = ws.map((w, i) => (i === wi && fake ? fake : w));
+  const body = '<p class="qtitle">الآية دي مكتوبة صح؟</p><div class="frame"><div class="frame-in q answer" id="qframe">' + shown.map((w) => '<span class="w">' + w.html + '</span>').join(' ') + '</div></div>';
+  const reveal = isCorrect ? null : ws.map((w, i) => '<span class="w' + (i === wi ? ' ok' : '') + '">' + (i === wi ? esc(w.plain) : w.html) + '</span>').join(' ');
+  const opts = [{ html: 'صح', v: true }, { html: 'غلط', v: false }];
+  quizShell(params, QUIZ.tf.title);
+  $('#qbody').innerHTML = body + '<div class="opts">' + opts.map((o, i) => '<button class="opt-btn ui" data-i="' + i + '">' + o.html + '</button>').join('') + '</div>';
+  let answered = false;
+  $$('.opt-btn').forEach((b) => {
+    b.onclick = () => {
+      if (answered) return;
+      answered = true;
+      const right = opts[+b.dataset.i].v === isCorrect;
+      $$('.opt-btn').forEach((x) => { if (opts[+x.dataset.i].v === isCorrect) x.classList.add('right'); });
+      if (!right) b.classList.add('wrong');
+      if (reveal) $('#qframe').innerHTML = reveal;
+      quizDone(params, right, right ? 'إجابة صح' : (isCorrect ? 'الآية كانت مكتوبة صح' : 'الكلمة الصح ظاهرة باللون الأخضر'));
+    };
+  });
+}
+
+function startOf(s, a) {
+  const ws = wordsOf(s, a);
+  return ws.slice(0, 5).map((w) => w.plain).join(' ') + (ws.length > 5 ? ' …' : '');
+}
+
+function qNextAyah(params, pool) {
+  const s = params.s;
+  const set = new Set(pool);
+  const len = QURAN[s - 1].ayat.length;
+  const cands = pool.filter((a) => a < len && set.has(a + 1));
+  const a = pick(cands);
+  const others = shuffle(range(1, len).filter((x) => x !== a + 1 && x !== a)).slice(0, 3);
+  const opts = shuffle([a + 1].concat(others)).map((x) => ({ x, html: esc(startOf(s, x)) }));
+  const body = '<p class="center small muted">آية ' + arDigits(a) + '</p><div class="frame"><div class="frame-in q answer">' +
+    ayahTokens(s, a).map((t) => (t.c ? '<span class="w">' + t.html + '</span>' : '<span class="mark">' + esc(t.plain) + '</span>')).join(' ') +
+    '</div></div><p class="qtitle">إيه الآية اللي بعدها؟</p>';
+  optionsQuiz(params, QUIZ.nextAyah.title, body, opts, (o) => o.x === a + 1, null, true);
+}
+
+function qOrder(params, pool) {
+  const s = params.s;
+  const set = new Set(pool);
+  const sorted = pool.slice().sort((x, y) => x - y);
+  const runs = [];
+  let cur = [];
+  sorted.forEach((a) => { if (cur.length && a === cur[cur.length - 1] + 1) cur.push(a); else { if (cur.length >= 2) runs.push(cur); cur = [a]; } });
+  if (cur.length >= 2) runs.push(cur);
+  const run = pick(runs);
+  const st = Math.floor(Math.random() * Math.max(1, run.length - 3));
+  const seq = run.slice(st, st + 4);
+  const items = shuffle(seq);
+  let pos = 0;
+  let errors = 0;
+  quizShell(params, QUIZ.order.title);
+  $('#qbody').innerHTML = '<p class="qtitle">دوس على الآيات بالترتيب</p><div class="frame"><div class="frame-in q answer" id="answer"></div></div>' +
+    '<div class="col" style="margin-top:12px">' + items.map((a, j) => '<button class="cbox" data-j="' + j + '">' + esc(startOf(s, a)) + '</button>').join('') + '</div>';
+  $$('.cbox').forEach((b) => {
+    b.onclick = () => {
+      if (b.classList.contains('right')) return;
+      const a = items[+b.dataset.j];
+      if (a === seq[pos]) {
+        b.classList.add('right');
+        $('#answer').insertAdjacentHTML('beforeend', '<div style="font-size:.8em">' + esc(startOf(s, a)) + ' <span class="anum">﴿' + arDigits(a) + '﴾</span></div>');
+        pos++;
+        if (pos === seq.length) quizDone(params, errors <= 1, errors ? 'أحسنت، رتّبتها' : 'ممتاز، من غير ولا غلطة');
+      } else {
+        errors++;
+        b.classList.add('wrong');
+        setTimeout(() => b.classList.remove('wrong'), 500);
+      }
+    };
+  });
+  void set;
+}
+
+function qConnect(params, pool) {
+  const s = params.s;
+  const elig = pool.filter((a) => wordsOf(s, a).length >= 2);
+  const chosen = shuffle(elig).slice(0, 4).sort((x, y) => x - y);
+  const pairs = chosen.map((a, k) => {
+    const tokens = ayahTokens(s, a);
+    const ws = wordsOf(s, a);
+    let cutW = Math.ceil(ws.length / 2);
+    const marks = [];
+    let wc = 0;
+    tokens.forEach((t) => { if (t.c) wc++; else if (/[\u06D6\u06D7\u06D8\u06DA\u06DB]/.test(t.plain) && wc > 0 && wc < ws.length) marks.push(wc); });
+    if (marks.length) cutW = marks.reduce((b, m) => (Math.abs(m - ws.length / 2) < Math.abs(b - ws.length / 2) ? m : b), marks[0]);
+    const start = ws.slice(0, cutW).slice(0, 6).map((t) => t.plain).join(' ') + (cutW > 6 ? ' …' : '');
+    const rest = ws.slice(cutW);
+    const end = (rest.length > 6 ? '… ' : '') + rest.slice(-6).map((t) => t.plain).join(' ');
+    return { k, a, start, end };
+  });
+  const ends = shuffle(pairs);
+  let sel = -1;
+  let done = 0;
+  let errors = 0;
+  quizShell(params, QUIZ.connect.title);
+  $('#qbody').innerHTML = '<p class="qtitle">اختار بداية الآية، وبعدين نهايتها</p><div class="connect"><div class="col" id="starts">' +
+    pairs.map((x) => '<button class="cbox" data-k="' + x.k + '">' + esc(x.start) + '</button>').join('') + '</div><div class="col" id="ends">' +
+    ends.map((x) => '<button class="cbox" data-k="' + x.k + '">' + esc(x.end) + '</button>').join('') + '</div></div>';
+  $$('#starts .cbox').forEach((b) => {
+    b.onclick = () => {
+      if (b.classList.contains('right')) return;
+      sel = +b.dataset.k;
+      $$('#starts .cbox').forEach((x) => x.classList.toggle('sel', x === b));
+    };
+  });
+  $$('#ends .cbox').forEach((b) => {
+    b.onclick = () => {
+      if (b.classList.contains('right')) return;
+      if (sel < 0) { toast('اختار البداية الأول'); return; }
+      if (+b.dataset.k === sel) {
+        b.classList.add('right');
+        const sb = $('#starts .cbox[data-k="' + sel + '"]');
+        if (sb) { sb.classList.remove('sel'); sb.classList.add('right'); }
+        sel = -1;
+        done++;
+        if (done === pairs.length) quizDone(params, errors <= 1, errors ? 'أحسنت، وصّلتهم كلهم' : 'ممتاز، من غير ولا غلطة');
+      } else {
+        errors++;
+        b.classList.add('wrong');
+        setTimeout(() => b.classList.remove('wrong'), 500);
+      }
+    };
+  });
+}
+
+function screenLessonDone(params) {
+  const s = params.s;
+  const sura = QURAN[s - 1];
+  const lessons = lessonsOf(s);
+  const idx = lessons.findIndex((l) => l.from === params.from);
+  const nextL = lessons[idx + 1];
+  confettiBurst();
+  app.innerHTML = topBar('سورة ' + sura.name, true) + '<main class="wrap"><div class="card empty">' + medal(80, true) +
+    '<b style="font-size:20px;margin-top:8px">خلّصت الدرس، ما شاء الله</b><p class="muted">' + (params.from === params.to ? 'آية ' + arDigits(params.from) : 'آيات ' + arDigits(params.from) + ' – ' + arDigits(params.to)) + ' بقت في محفوظك</p>' +
+    (nextL ? '<button class="primary" id="nextL">الدرس التالي</button>' : '<p class="gold">ختمت كل دروس السورة</p><button class="primary" id="reciteAll">سمّع السورة كاملة</button>') +
+    '<button class="light-btn" id="toSurah">رجوع للسورة</button></div></main>';
+  const nl = $('#nextL'); if (nl) nl.onclick = () => go('practice', { s, a: nextL.from }, true);
+  const ra = $('#reciteAll'); if (ra) ra.onclick = () => go('recite', { s, from: 1, to: sura.ayat.length, purpose: 'surah' }, true);
+  $('#toSurah').onclick = () => go('surah', { s }, true);
 }
 
 function screenReviewHub() {
@@ -1082,7 +1679,7 @@ function screenReviewHub() {
       ? mistakes.map(([k, c]) => {
         const [s, a] = k.split(':').map(Number);
         const sura = QURAN[s - 1];
-        const words = ayahTokens(s, a).filter((t) => t.c).slice(0, 5).map((t) => t.plain).join(' ');
+        const words = wordsOf(s, a).slice(0, 5).map((t) => t.plain).join(' ');
         return '<button class="row" data-s="' + s + '" data-a="' + a + '"><span class="count">' + c + '</span><div class="grow"><b class="qf">' + esc(sura.name) + ' · آية ' + arDigits(a) +
           '</b><small>' + esc(words) + '…</small></div>' + icon('chevronLeft', 18) + '</button>';
       }).join('') + '<button class="light-btn" id="clearM">مسح سجل الأخطاء</button>'
@@ -1125,173 +1722,22 @@ function screenSurahActs(params) {
   const sura = QURAN[s - 1];
   if (!sura) { go('home', {}, true); return; }
   const mem = memorizedAyat(s);
-  const connectOk = mem.filter((a) => ayahTokens(s, a).filter((t) => t.c).length >= 2).length >= 3;
-  const card = (kind, ic, title, sub, locked) => '<button class="row' + (locked ? ' locked' : '') + '" data-kind="' + kind + '"' + (locked ? ' data-locked="1"' : '') + '><span class="act-ic">' +
-    icon(locked ? 'lock' : ic, 22) + '</span><div class="grow"><b>' + title + '</b><small>' + sub + '</small></div>' + icon('chevronLeft', 18) + '</button>';
+  const card = (kind) => {
+    const q = QUIZ[kind];
+    const ok = quizAvailable(kind, mem, s);
+    return '<button class="row' + (ok ? '' : ' locked') + '" data-kind="' + kind + '"' + (ok ? '' : ' data-locked="1"') + '><span class="act-ic">' +
+      icon(ok ? q.icon : 'lock', 22) + '</span><div class="grow"><b>' + q.title + '</b><small>' + q.desc + '</small></div>' + icon('chevronLeft', 18) + '</button>';
+  };
   app.innerHTML = topBar('أنشطة سورة ' + sura.name, true) + '<main class="wrap"><p class="muted small">محفوظ ' + mem.length + ' من ' + sura.ayat.length + ' آية</p>' +
-    card('arrange', 'shuffle', 'رتّب الآية', 'كلمات آية من محفوظك متلخبطة، رتّبها', !mem.length) +
-    card('complete', 'pencil', 'أكمل الكلمة', 'اختار الكلمة الناقصة من الآية', !mem.length) +
-    card('connect', 'link', 'وصّل', connectOk ? 'وصّل بداية كل آية بنهايتها' : 'محتاج 3 آيات محفوظة على الأقل', !connectOk) +
-    card('recite', 'mic', 'سمّع السورة من الذاكرة', 'الكلمات بتظهر وانت بتسمّع آية ورا آية', false) + '</main>';
+    Object.keys(QUIZ).map(card).join('') +
+    '<button class="row" id="reciteAll"><span class="act-ic">' + icon('mic', 22) + '</span><div class="grow"><b>سمّع السورة كاملة</b><small>من الذاكرة مرة واحدة من غير توقف</small></div>' + icon('chevronLeft', 18) + '</button></main>';
   $$('[data-kind]').forEach((b) => {
     b.onclick = () => {
-      if (b.dataset.locked) { toast(b.dataset.kind === 'connect' ? 'احفظ 3 آيات من السورة الأول' : 'احفظ آيات من السورة الأول'); return; }
-      if (b.dataset.kind === 'recite') go('practice', { s, a: 1, mode: 'recite' });
-      else go('game', { s, kind: b.dataset.kind });
+      if (b.dataset.locked) { toast('احفظ آيات أكتر من السورة عشان النشاط ده يتفتح'); return; }
+      go('quiz', { s, kind: b.dataset.kind });
     };
   });
-}
-
-function screenGame(params) {
-  const s = params.s;
-  const sura = QURAN[s - 1];
-  if (!sura) { go('home', {}, true); return; }
-  if (params.kind === 'connect') { gameConnect(sura, s); return; }
-  let a = params.a;
-  if (!a) {
-    const mem = memorizedAyat(s);
-    if (!mem.length) { lockedScreen('أنشطة', 'احفظ آيات من سورة ' + sura.name + ' الأول، والأنشطة هتتفتح عليها'); return; }
-    a = pick(mem);
-  }
-  const ws = ayahTokens(s, a).filter((t) => t.c);
-  if (params.kind === 'complete') gameComplete(sura, s, a, ws, !!params.chain);
-  else gameArrange(sura, s, a, ws, !!params.chain);
-}
-
-function gameArrange(sura, s, a, ws, chain) {
-  let target = ws;
-  if (ws.length > 9) {
-    const start = Math.floor(Math.random() * (ws.length - 8));
-    target = ws.slice(start, start + 8);
-  }
-  const chips = shuffle(target);
-  let pos = 0;
-  let errors = 0;
-  app.innerHTML = topBar('رتّب الآية', true) + '<main class="wrap"><p class="muted small center">سورة ' + esc(sura.name) + ' · آية ' + arDigits(a) +
-    (chain ? ' · نشاط ١ من ٢' : target.length < ws.length ? ' · جزء من الآية' : '') + '</p>' +
-    '<div class="frame"><div class="frame-in q answer" id="answer"></div></div><div class="wchips">' +
-    chips.map((w, j) => '<button class="wchip" data-j="' + j + '">' + w.html + '</button>').join('') +
-    '</div><div id="result"></div><button class="light-btn" id="hint">اسمع الآية</button></main>';
-  $$('.wchip').forEach((b) => {
-    b.onclick = () => {
-      if (pos >= target.length) return;
-      const w = chips[+b.dataset.j];
-      if (w.c === target[pos].c) {
-        b.disabled = true;
-        b.classList.add('used');
-        $('#answer').insertAdjacentHTML('beforeend', '<span class="w">' + w.html + '</span> ');
-        pos++;
-        if (pos === target.length) finish();
-      } else {
-        errors++;
-        b.classList.add('wrong');
-        setTimeout(() => b.classList.remove('wrong'), 500);
-      }
-    };
-  });
-  function finish() {
-    if (!errors) confettiBurst();
-    $('#result').innerHTML = '<div class="result pass"><b>' + (errors === 0 ? 'ممتاز، من غير ولا غلطة' : 'أحسنت، رتّبتها') + '</b>' +
-      (errors ? '<div class="counts"><span class="miss">' + errors + ' محاولة غلط</span></div>' : '') +
-      (chain ? '<button class="primary" id="nx">التالي: أكمل الكلمة</button>' : '<button class="primary" id="again">آية تانية</button>') + '</div>';
-    const nx = $('#nx'); if (nx) nx.onclick = () => go('game', { s, a, kind: 'complete', chain: true }, true);
-    const again = $('#again'); if (again) again.onclick = () => go('game', { s, kind: 'arrange' }, true);
-  }
-  $('#hint').onclick = async () => {
-    const tokens = ayahTokens(s, a);
-    const T = await getTimings(reciterId(profile()));
-    playRepeat(s, a, clipFor(T && T[s + ':' + a], tokens, 0, tokens.length - 1), 1, () => {}, () => {});
-  };
-}
-
-function gameComplete(sura, s, a, ws, chain) {
-  const cand = ws.map((w, i) => i).filter((i) => ws[i].c.length >= 2);
-  const mi = cand.length ? pick(cand) : 0;
-  const answer = ws[mi];
-  const pool = new Map();
-  const addFrom = (ss) => {
-    const len = QURAN[ss - 1].ayat.length;
-    for (let ai = 1; ai <= len; ai++) {
-      ayahTokens(ss, ai).forEach((w) => {
-        if (w.c && w.c.length >= 2 && w.c !== answer.c && !pool.has(w.c)) pool.set(w.c, w);
-      });
-    }
-  };
-  addFrom(s);
-  if (pool.size < 3) addFrom(s === 114 ? 113 : s + 1);
-  if (pool.size < 3) addFrom(1);
-  const options = shuffle([answer].concat(shuffle(Array.from(pool.values())).slice(0, 3)));
-  app.innerHTML = topBar('أكمل الكلمة', true) + '<main class="wrap"><p class="muted small center">سورة ' + esc(sura.name) + ' · آية ' + arDigits(a) + (chain ? ' · نشاط ٢ من ٢' : '') + '</p>' +
-    '<div class="frame"><div class="frame-in q answer">' + ws.map((w, i) => (i === mi ? '<span class="blank" style="width:3em"></span>' : '<span class="w">' + w.html + '</span>')).join(' ') + '</div></div>' +
-    '<div class="opts">' + options.map((o, i) => '<button class="opt-btn" data-i="' + i + '">' + o.html + '</button>').join('') + '</div><div id="result"></div></main>';
-  let answered = false;
-  $$('.opt-btn').forEach((b) => {
-    b.onclick = () => {
-      if (answered) return;
-      answered = true;
-      const right = options[+b.dataset.i].c === answer.c;
-      $$('.opt-btn').forEach((x) => { if (options[+x.dataset.i].c === answer.c) x.classList.add('right'); });
-      if (!right) b.classList.add('wrong');
-      else confettiBurst();
-      const lastAyah = a === sura.ayat.length;
-      $('#result').innerHTML = '<div class="result ' + (right ? 'pass' : 'fail') + '"><b>' + (right ? 'إجابة صح' : 'الإجابة الصح باللون الأخضر') + '</b>' +
-        (chain ? '<button class="primary" id="nx">' + (lastAyah ? 'خلّصت السورة' : 'احفظ الآية التالية') + '</button>' : '<button class="primary" id="again">سؤال تاني</button>') + '</div>';
-      const nx = $('#nx');
-      if (nx) nx.onclick = () => { if (lastAyah) { toast('ما شاء الله، خلّصت سورة ' + sura.name); goBack(); } else go('practice', { s, a: a + 1 }, true); };
-      const again = $('#again'); if (again) again.onclick = () => go('game', { s, kind: 'complete' }, true);
-    };
-  });
-}
-
-function gameConnect(sura, s) {
-  const elig = memorizedAyat(s).filter((a) => ayahTokens(s, a).filter((t) => t.c).length >= 2);
-  if (elig.length < 3) { lockedScreen('وصّل', 'محتاج تحفظ 3 آيات على الأقل من سورة ' + sura.name + ' عشان تلعب وصّل'); return; }
-  const chosen = shuffle(elig).slice(0, 4).sort((x, y) => x - y);
-  const pairs = chosen.map((a, k) => {
-    const ws = ayahTokens(s, a).filter((t) => t.c);
-    const half = Math.ceil(ws.length / 2);
-    const start = ws.slice(0, Math.min(half, 5)).map((t) => t.plain).join(' ') + (half > 5 ? ' …' : '');
-    const rest = ws.slice(half);
-    const end = (rest.length > 5 ? '… ' : '') + rest.slice(-5).map((t) => t.plain).join(' ');
-    return { k, a, start, end };
-  });
-  const ends = shuffle(pairs);
-  let sel = -1;
-  let done = 0;
-  let errors = 0;
-  app.innerHTML = topBar('وصّل', true) + '<main class="wrap"><p class="muted small center">اختار بداية الآية، وبعدين اختار نهايتها</p><div class="connect"><div class="col" id="starts">' +
-    pairs.map((x) => '<button class="cbox" data-k="' + x.k + '">' + esc(x.start) + '</button>').join('') + '</div><div class="col" id="ends">' +
-    ends.map((x) => '<button class="cbox" data-k="' + x.k + '">' + esc(x.end) + '</button>').join('') + '</div></div><div id="result"></div></main>';
-  $$('#starts .cbox').forEach((b) => {
-    b.onclick = () => {
-      if (b.classList.contains('right')) return;
-      sel = +b.dataset.k;
-      $$('#starts .cbox').forEach((x) => x.classList.toggle('sel', x === b));
-    };
-  });
-  $$('#ends .cbox').forEach((b) => {
-    b.onclick = () => {
-      if (b.classList.contains('right')) return;
-      if (sel < 0) { toast('اختار البداية الأول'); return; }
-      if (+b.dataset.k === sel) {
-        b.classList.add('right');
-        const sb = $('#starts .cbox[data-k="' + sel + '"]');
-        if (sb) { sb.classList.remove('sel'); sb.classList.add('right'); }
-        sel = -1;
-        done++;
-        if (done === pairs.length) finish();
-      } else {
-        errors++;
-        b.classList.add('wrong');
-        setTimeout(() => b.classList.remove('wrong'), 500);
-      }
-    };
-  });
-  function finish() {
-    if (!errors) confettiBurst();
-    $('#result').innerHTML = '<div class="result pass"><b>' + (errors ? 'أحسنت، وصّلتهم كلهم' : 'ممتاز، من غير ولا غلطة') + '</b><button class="primary" id="again">جولة تانية</button></div>';
-    $('#again').onclick = () => go('game', { s, kind: 'connect' }, true);
-  }
+  $('#reciteAll').onclick = () => go('recite', { s, from: 1, to: sura.ayat.length, purpose: 'surah' });
 }
 
 function screenSettings() {
@@ -1303,6 +1749,7 @@ function screenSettings() {
     '<section class="card"><h2>المظهر</h2>' + seg('themeSeg', ['auto', 'light', 'dark'], st.theme, (v) => ({ auto: 'تلقائي', light: 'نهاري', dark: 'ليلي' }[v])) + '</section>' +
     '<section class="card"><h2>التذكير اليومي</h2>' + seg('remSeg', ['on', 'off'], st.reminder.on ? 'on' : 'off', (v) => (v === 'on' ? 'شغّال' : 'مقفول')) +
     '<label class="opt"><span>الوقت</span><input type="time" id="remTime" class="time" value="' + esc(st.reminder.time) + '"></label>' +
+    '<button class="light-btn" id="remTest">جرّب الإشعار دلوقتي</button>' +
     '<p class="muted small">إشعار كل يوم يفكّرك بوِردك، وبيشتغل من غير إنترنت.</p></section>' +
     '<section class="card"><h2>وِرد اليوم (آيات جديدة)</h2>' + seg('goalSeg', GOALS, p.goal) + '</section>' +
     '<section class="card"><h2>عدد مرات الاستماع للمقطع</h2>' + seg('repSeg', REPEATS, p.repeat) + '</section>' +
@@ -1332,6 +1779,7 @@ function screenSettings() {
     save();
     if (st.reminder.on) scheduleReminders();
   };
+  $('#remTest').onclick = () => scheduleReminders({ test: true });
   $$('#goalSeg button').forEach((b) => { b.onclick = () => { p.goal = +b.dataset.v; save(); render(history.state); }; });
   $$('#repSeg button').forEach((b) => { b.onclick = () => { p.repeat = +b.dataset.v; save(); render(history.state); }; });
   $$('#tjSeg button').forEach((b) => { b.onclick = () => { p.tajweed = b.dataset.v === 'on'; save(); render(history.state); }; });
@@ -1372,12 +1820,15 @@ function render(state) {
     switch (screen) {
       case 'profiles': screenProfiles(); break;
       case 'surahs': screenSurahs(); break;
+      case 'surah': screenSurah(params); break;
       case 'practice': screenPractice(params); break;
+      case 'recite': screenRecite(params); break;
+      case 'quiz': screenQuiz(params); break;
+      case 'lessonDone': screenLessonDone(params); break;
       case 'reviewHub': screenReviewHub(); break;
       case 'review': screenReview(); break;
       case 'activities': screenActivities(); break;
       case 'surahActs': screenSurahActs(params); break;
-      case 'game': screenGame(params); break;
       case 'awards': screenAwards(); break;
       case 'settings': screenSettings(); break;
       default: screenHome();
@@ -1416,6 +1867,7 @@ async function init() {
   const state = prev ? Object.assign({ depth: 0 }, prev) : { screen: profile() ? 'home' : 'profiles', params: {}, depth: 0 };
   history.replaceState(state, '');
   render(state);
+  if (db.settings.reminder.on) scheduleReminders({ silent: true });
 }
 
 init();

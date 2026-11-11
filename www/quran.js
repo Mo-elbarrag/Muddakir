@@ -19,6 +19,8 @@ const COMPLEMENTS = new Set(['لنا', 'له', 'لهم', 'لكم', 'لك', 'لي
 
 const escT = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+export const isStopMark = (plain) => /[\u06D6\u06D7\u06D8\u06DA\u06DB]/.test(plain) && !/\u06D9/.test(plain);
+
 export function normalize(s) {
   return String(s)
     .replace(/\uFEFF/g, '')
@@ -67,13 +69,20 @@ export function parseAyah(text) {
   return tokens;
 }
 
+export const countWords = (tokens, r) => { let n = 0; for (let i = r[0]; i <= r[1]; i++) if (tokens[i].c) n++; return n; };
+
+function markBetween(tokens, ti, tn) {
+  for (let i = ti + 1; i < tn; i++) if (!tokens[i].c && isStopMark(tokens[i].plain)) return true;
+  return false;
+}
+
 function dpSplit(tokens, words, pauses, a, b) {
   const W = b - a + 1;
   const cutScore = (k) => {
     const ti = words[k];
     const tn = words[k + 1];
     let s = 0;
-    if (tn - ti > 1) s += 10;
+    if (markBetween(tokens, ti, tn)) s += 10;
     const ps = pauses ? pauses[ti] : null;
     if (ps !== null && ps !== undefined) {
       if (ps >= 400) s += 8;
@@ -113,51 +122,74 @@ function dpSplit(tokens, words, pauses, a, b) {
   return out;
 }
 
+function mergeTiny(groups, min) {
+  let changed = true;
+  while (changed && groups.length > 1) {
+    changed = false;
+    for (let g = 0; g < groups.length; g++) {
+      if (groups[g][1] - groups[g][0] + 1 >= min) continue;
+      if (g === 0) groups[1][0] = groups[0][0];
+      else if (g === groups.length - 1) groups[g - 1][1] = groups[g][1];
+      else {
+        const prevLen = groups[g - 1][1] - groups[g - 1][0] + 1;
+        const nextLen = groups[g + 1][1] - groups[g + 1][0] + 1;
+        if (prevLen <= nextLen) groups[g - 1][1] = groups[g][1];
+        else groups[g + 1][0] = groups[g][0];
+      }
+      groups.splice(g, 1);
+      changed = true;
+      break;
+    }
+  }
+  return groups;
+}
+
 export function splitChunks(tokens, pauses) {
   const words = [];
   tokens.forEach((t, i) => { if (t.c) words.push(i); });
   const W = words.length;
   if (W <= 4) return [[0, tokens.length - 1]];
-  let groups;
-  if (pauses) {
-    const cuts = [];
-    for (let k = 0; k + 1 < W; k++) {
-      const ps = pauses[words[k]];
-      const mark = words[k + 1] - words[k] > 1;
-      if (ps !== null && ps !== undefined && (ps >= 280 || (mark && ps >= 150))) cuts.push(k);
-    }
-    groups = [];
-    let st = 0;
-    for (const k of cuts) { groups.push([st, k]); st = k + 1; }
-    groups.push([st, W - 1]);
-    let changed = true;
-    while (changed && groups.length > 1) {
-      changed = false;
-      for (let g = 0; g < groups.length; g++) {
-        if (groups[g][1] - groups[g][0] + 1 >= 2) continue;
-        if (g === 0) groups[1][0] = groups[0][0];
-        else if (g === groups.length - 1) groups[g - 1][1] = groups[g][1];
-        else {
-          const prevLen = groups[g - 1][1] - groups[g - 1][0] + 1;
-          const nextLen = groups[g + 1][1] - groups[g + 1][0] + 1;
-          if (prevLen <= nextLen) groups[g - 1][1] = groups[g][1];
-          else groups[g + 1][0] = groups[g][0];
-        }
-        groups.splice(g, 1);
-        changed = true;
-        break;
-      }
-    }
-    const out = [];
-    for (const [a, b] of groups) {
-      if (b - a + 1 > 12) out.push(...dpSplit(tokens, words, pauses, a, b));
-      else out.push([a, b]);
-    }
-    groups = out;
-  } else {
-    groups = W <= 5 ? [[0, W - 1]] : dpSplit(tokens, words, null, 0, W - 1);
+  const cuts = [];
+  for (let k = 0; k + 1 < W; k++) {
+    const mark = markBetween(tokens, words[k], words[k + 1]);
+    const ps = pauses ? pauses[words[k]] : null;
+    const has = ps !== null && ps !== undefined;
+    if (mark && (!has || ps >= 150)) cuts.push(k);
+    else if (has && ps >= 450) cuts.push(k);
   }
-  return groups.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === groups.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
+  let groups = [];
+  let st = 0;
+  for (const k of cuts) { groups.push([st, k]); st = k + 1; }
+  groups.push([st, W - 1]);
+  groups = mergeTiny(groups, 2);
+  const out = [];
+  for (const [a, b] of groups) {
+    if (b - a + 1 > 12) out.push(...dpSplit(tokens, words, pauses, a, b));
+    else out.push([a, b]);
+  }
+  return out.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === out.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
+}
+
+export function meaningSegment(tokens) {
+  const total = countWords(tokens, [0, tokens.length - 1]);
+  if (total <= 12) return [0, tokens.length - 1];
+  let segs = [];
+  let st = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!tokens[i].c && isStopMark(tokens[i].plain)) { segs.push([st, i]); st = i + 1; }
+  }
+  if (st < tokens.length) segs.push([st, tokens.length - 1]);
+  segs = segs.filter((r) => countWords(tokens, r) > 0);
+  const merged = [];
+  for (const r of segs) {
+    const lastSeg = merged[merged.length - 1];
+    if (lastSeg && countWords(tokens, lastSeg) < 3) lastSeg[1] = r[1];
+    else merged.push([r[0], r[1]]);
+  }
+  const good = merged.filter((r) => { const n = countWords(tokens, r); return n >= 3 && n <= 12; });
+  if (good.length) return good[Math.floor(Math.random() * good.length)];
+  const ch = splitChunks(tokens, null).filter((r) => countWords(tokens, r) >= 3);
+  return ch.length ? ch[Math.floor(Math.random() * ch.length)] : [0, tokens.length - 1];
 }
 
 export function buildStages(chunks) {
