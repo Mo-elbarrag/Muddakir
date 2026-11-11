@@ -205,3 +205,25 @@ export function buildStages(chunks) {
   if (!cumulative) st.push({ from: first, to: lastTo, kind: 'full' });
   return st;
 }
+
+export function chunksFromCuts(tokens, cuts) {
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  const W = words.length;
+  if (W <= 1) return [[0, tokens.length - 1]];
+  let groups = [];
+  let st = 0;
+  for (const k of cuts) {
+    if (k < st || k >= W - 1) continue;
+    groups.push([st, k]);
+    st = k + 1;
+  }
+  groups.push([st, W - 1]);
+  groups = mergeTiny(groups, 2);
+  const out = [];
+  for (const [a, b] of groups) {
+    if (b - a + 1 > 14) out.push(...dpSplit(tokens, words, null, a, b));
+    else out.push([a, b]);
+  }
+  return out.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === out.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
+}

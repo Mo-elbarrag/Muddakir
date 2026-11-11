@@ -1,5 +1,5 @@
 import { initEngine, isReady, startListening, stopListening, inferNow, refSkeleton, heardSkeleton, alignWords } from './recite.js';
-import { parseAyah, splitChunks, buildStages, meaningSegment, LEGEND } from './quran.js';
+import { parseAyah, splitChunks, buildStages, meaningSegment, chunksFromCuts, isStopMark, LEGEND } from './quran.js';
 
 const RECITERS = [
   { id: 'Minshawy_Murattal_128kbps', name: 'محمد صديق المنشاوي' },
@@ -809,13 +809,141 @@ function screenSurah(params) {
   $('#reciteAll').onclick = () => go('recite', { s, from: 1, to: len, purpose: 'surah' });
 }
 
+const cutCache = {};
+
+async function fetchAudioBuffer(url) {
+  try {
+    const r = await fetch(url);
+    if (r.ok) return await r.arrayBuffer();
+  } catch (e) { /* fall back to native http */ }
+  const H = capPlugin('CapacitorHttp');
+  if (!H) throw new Error('no http');
+  const res = await H.get({ url, responseType: 'arraybuffer' });
+  const d = res && res.data;
+  if (d instanceof ArrayBuffer) return d;
+  const bin = atob(String(d));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+
+async function audioCuts(s, a, tokens, row) {
+  const ck = 'mdk-cuts-' + reciterId(profile()) + '-' + s + '-' + a;
+  if (cutCache[ck]) return cutCache[ck];
+  try { const v = JSON.parse(localStorage.getItem(ck)); if (Array.isArray(v)) { cutCache[ck] = v; return v; } } catch (e) { /* ignore */ }
+  const buf = await fetchAudioBuffer(audioUrl(s, a));
+  const C = window.AudioContext || window.webkitAudioContext;
+  const ctx = new C();
+  let audio;
+  try { audio = await ctx.decodeAudioData(buf); } finally { ctx.close().catch(() => {}); }
+  const data = audio.getChannelData(0);
+  const sr = audio.sampleRate;
+  const hop = Math.round(sr * 0.01);
+  const win = hop * 2;
+  const nF = Math.max(0, Math.floor((data.length - win) / hop));
+  if (nF < 50) return null;
+  const rms = new Float32Array(nF);
+  for (let fr = 0; fr < nF; fr++) {
+    let sum = 0;
+    const o = fr * hop;
+    for (let i = 0; i < win; i += 2) { const v = data[o + i]; sum += v * v; }
+    rms[fr] = Math.sqrt(sum / (win / 2));
+  }
+  const sorted = Float32Array.from(rms).sort();
+  const floor = sorted[Math.floor(nF * 0.1)];
+  const voiced = sorted[Math.floor(nF * 0.6)];
+  const thr = floor + 0.18 * (voiced - floor);
+  const isV = new Uint8Array(nF);
+  for (let fr = 0; fr < nF; fr++) isV[fr] = rms[fr] > thr ? 1 : 0;
+  const first = isV.indexOf(1);
+  if (first < 0) return null;
+  let lastV = nF - 1;
+  while (lastV > 0 && !isV[lastV]) lastV--;
+  const sil = [];
+  let fr = first;
+  while (fr < lastV) {
+    if (!isV[fr]) {
+      const st = fr;
+      while (fr < lastV && !isV[fr]) fr++;
+      if (fr - st >= 28) sil.push([st, fr]);
+    } else fr++;
+  }
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  const W = words.length;
+  const marks = new Set();
+  for (let k = 0; k + 1 < W; k++) {
+    for (let i = words[k] + 1; i < words[k + 1]; i++) if (!tokens[i].c && isStopMark(tokens[i].plain)) marks.add(k);
+  }
+  let starts = null;
+  if (row) {
+    const n = row[0];
+    const map = rowMapper(n, tokens);
+    const stt = row.slice(1, 1 + n);
+    starts = words.map((ti) => stt[map(ti)] / 10);
+  }
+  const lens = words.map((ti) => Math.max(1, tokens[ti].c.length));
+  const totalLen = lens.reduce((x, y) => x + y, 0);
+  let voicedTotal = 0;
+  for (let i = first; i <= lastV; i++) voicedTotal += isV[i];
+  const cuts = new Set();
+  for (const [ss, se] of sil) {
+    let k;
+    if (starts) {
+      const mid = (ss + se) / 2;
+      let j = starts.findIndex((t) => t >= mid);
+      if (j < 0) j = W;
+      k = j - 1;
+    } else {
+      let vb = 0;
+      for (let i = first; i < ss; i++) vb += isV[i];
+      const frac = vb / Math.max(1, voicedTotal);
+      let cum = 0;
+      let best = 0;
+      let bd = Infinity;
+      for (let q = 0; q < W - 1; q++) {
+        cum += lens[q] / totalLen;
+        const d = Math.abs(cum - frac);
+        if (d < bd) { bd = d; best = q; }
+      }
+      k = best;
+    }
+    if (k < 0 || k > W - 2) continue;
+    if (!marks.has(k)) {
+      if (marks.has(k - 1)) k -= 1;
+      else if (marks.has(k + 1)) k += 1;
+    }
+    cuts.add(k);
+  }
+  const out = Array.from(cuts).sort((x, y) => x - y);
+  cutCache[ck] = out;
+  try { localStorage.setItem(ck, JSON.stringify(out)); } catch (e) { /* ignore */ }
+  return out;
+}
+
 function screenPractice(params) {
   const sura = QURAN[params.s - 1];
   if (!sura) { go('home', {}, true); return; }
   const rid = renderSeq;
-  app.innerHTML = topBar('سورة ' + sura.name, true) + '<main class="wrap"><p class="muted center">جاري التحضير…</p></main>';
+  const mode = params.mode || 'learn';
+  app.innerHTML = topBar('سورة ' + sura.name, true) + '<main class="wrap"><p class="muted center">' + (mode === 'learn' ? 'جاري تقسيم الآية على وقفات الشيخ…' : 'جاري التحضير…') + '</p></main>';
   initEngine().catch(() => {});
-  getTimings(reciterId(profile())).then((T) => { if (rid === renderSeq) buildPractice(params, T, rid); });
+  getTimings(reciterId(profile())).then(async (T) => {
+    if (rid !== renderSeq) return;
+    let cuts = null;
+    if (mode === 'learn') {
+      const a = Math.min(Math.max(1, params.a || 1), sura.ayat.length);
+      const tokens = ayahTokens(params.s, a);
+      if (tokens.filter((t) => t.c).length > 4) {
+        try {
+          cuts = await Promise.race([audioCuts(params.s, a, tokens, T && T[params.s + ':' + a]), sleep(9000).then(() => null)]);
+        } catch (e) {
+          cuts = null;
+        }
+      }
+    }
+    if (rid === renderSeq) buildPractice(params, T, rid, cuts);
+  });
 }
 
 function startQuizChain(s, from, to) {
@@ -824,7 +952,7 @@ function startQuizChain(s, from, to) {
   go('quiz', { s, kind: list[0], chain: { list, i: 0, from, to } }, true);
 }
 
-function buildPractice(params, T, rid) {
+function buildPractice(params, T, rid, cuts) {
   const s = params.s;
   const sura = QURAN[s - 1];
   const mode = params.mode || 'learn';
@@ -838,7 +966,7 @@ function buildPractice(params, T, rid) {
   const st0 = p.ayat[key(s, a)];
   const last = a === sura.ayat.length;
   const L = lessonOf(s, a);
-  const stages = mode === 'learn' ? buildStages(splitChunks(tokens, pausesFor(row, tokens))) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
+  const stages = mode === 'learn' ? buildStages(cuts ? chunksFromCuts(tokens, cuts) : splitChunks(tokens, pausesFor(row, tokens))) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
   const stepsOf = (stg) => (stg.kind === 'learn' ? ['listen', 'read', 'memory'] : stg.kind === 'link' ? ['listen', 'memory'] : ['memory']);
   let si = 0;
   if (mode === 'learn' && p.lastStage && p.lastStage.s === s && p.lastStage.a === a) si = Math.min(p.lastStage.si || 0, stages.length - 1);
