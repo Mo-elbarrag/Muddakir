@@ -1,3 +1,5 @@
 node_modules/
 android/
 www/data/
+www/fonts/
+.tmp/

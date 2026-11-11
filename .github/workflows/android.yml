@@ -36,7 +36,12 @@ jobs:
           fi
 
       - run: npm install
-      - run: node scripts/prepare.js
+
+      - name: Prepare Quran data
+        run: node scripts/prepare.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - run: npx cap add android
       - run: node scripts/android-setup.js
       - run: npx cap sync android

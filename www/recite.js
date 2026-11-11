@@ -1,77 +1,68 @@
-const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3';
-const MODELS = ['iqbalaesthetic/Basira', 'aaqibhabib/whisper-base-ar-quran-onnx'];
+import { normalize } from './quran.js';
+
 const ISTIADHA = ['اعوذ', 'بالله', 'من', 'الشيطان', 'الرجيم'];
 const BASMALA = ['بسم', 'الله', 'الرحمن', 'الرحيم'];
 
-let asr = null;
-let loading = null;
+let worker = null;
+let seq = 0;
+const pending = new Map();
+let progressCb = null;
+let loaded = false;
+let loadingP = null;
 let recorder = null;
 let stream = null;
 let chunks = [];
 
-export const isModelLoaded = () => !!asr;
-
-export function normalize(s) {
-  return String(s)
-    .replace(/\uFEFF/g, '')
-    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, '')
-    .replace(/[إأآٱ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ؤ/g, 'و')
-    .replace(/ئ/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/ء/g, '')
-    .replace(/[^\u0621-\u064A\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+function getWorker() {
+  if (worker) return worker;
+  worker = new Worker(new URL('./asr-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = (e) => {
+    const m = e.data || {};
+    if (m.type === 'progress') { if (progressCb) progressCb(m.pct); return; }
+    const p = pending.get(m.id);
+    if (!p) return;
+    pending.delete(m.id);
+    if (m.type === 'error') p.reject(new Error(m.message || 'error'));
+    else p.resolve(m);
+  };
+  worker.onerror = (e) => {
+    for (const [, p] of pending) p.reject(new Error((e && e.message) || 'worker error'));
+    pending.clear();
+    worker = null;
+    loadingP = null;
+    loaded = false;
+  };
+  return worker;
 }
 
+function call(type, payload, transfer) {
+  return new Promise((resolve, reject) => {
+    const id = ++seq;
+    pending.set(id, { resolve, reject });
+    try {
+      getWorker().postMessage(Object.assign({ id, type }, payload || {}), transfer || []);
+    } catch (e) {
+      pending.delete(id);
+      reject(e);
+    }
+  });
+}
+
+export const isModelLoaded = () => loaded;
+
 export function loadModel(onProgress) {
-  if (asr) return Promise.resolve(asr);
-  if (loading) return loading;
-  loading = (async () => {
-    const T = await import(CDN);
-    T.env.allowLocalModels = false;
-    T.env.useBrowserCache = true;
-    if (T.env.backends && T.env.backends.onnx && T.env.backends.onnx.wasm) {
-      T.env.backends.onnx.wasm.numThreads = 1;
-    }
-    const files = {};
-    const progress = (e) => {
-      if (!onProgress || !e || e.status !== 'progress' || !e.file) return;
-      files[e.file] = { loaded: e.loaded || 0, total: e.total || 0 };
-      let l = 0;
-      let t = 0;
-      for (const f of Object.values(files)) { l += f.loaded; t += f.total; }
-      if (t > 0) onProgress(Math.min(100, Math.round((l * 100) / t)));
-    };
-    let lastError;
-    for (const id of MODELS) {
-      try {
-        asr = await T.pipeline('automatic-speech-recognition', id, { dtype: 'q8', device: 'wasm', progress_callback: progress });
-        return asr;
-      } catch (e) {
-        lastError = e;
-        console.error('model failed', id, e);
-      }
-    }
-    throw lastError || new Error('model failed');
-  })();
-  loading.catch(() => { loading = null; });
-  return loading;
+  if (loaded) return Promise.resolve();
+  if (onProgress) progressCb = onProgress;
+  if (!loadingP) {
+    loadingP = call('load').then(() => { loaded = true; }).catch((e) => { loadingP = null; throw e; });
+  }
+  return loadingP;
 }
 
 export async function transcribe(audio) {
-  const model = await loadModel();
-  let out;
-  try {
-    out = await model(audio, { language: 'arabic', task: 'transcribe', chunk_length_s: 30, stride_length_s: 5 });
-  } catch (e) {
-    console.warn('retry without language', e);
-    out = await model(audio, { chunk_length_s: 30, stride_length_s: 5 });
-  }
-  if (Array.isArray(out)) return out.map((o) => o.text || '').join(' ');
-  return (out && out.text) || '';
+  await loadModel();
+  const m = await call('transcribe', { audio }, [audio.buffer]);
+  return m.text || '';
 }
 
 function stopTracks() {
@@ -79,12 +70,28 @@ function stopTracks() {
   stream = null;
 }
 
+async function decode(blob) {
+  const C = window.AudioContext || window.webkitAudioContext;
+  const ctx = new C({ sampleRate: 16000 });
+  try {
+    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    return buf.getChannelData(0).slice();
+  } finally {
+    ctx.close().catch(() => {});
+  }
+}
+
 export async function startRecording() {
   stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
   chunks = [];
   recorder = new MediaRecorder(stream);
   recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-  recorder.start();
+  recorder.start(300);
+}
+
+export async function snapshot() {
+  if (!recorder || !chunks.length) return null;
+  return decode(new Blob(chunks.slice(), { type: recorder.mimeType || 'audio/webm' }));
 }
 
 export function cancelRecording() {
@@ -104,16 +111,10 @@ export function stopRecording() {
     r.onstop = async () => {
       stopTracks();
       recorder = null;
+      const parts = chunks;
+      chunks = [];
       try {
-        const blob = new Blob(chunks, { type: r.mimeType || 'audio/webm' });
-        chunks = [];
-        const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        try {
-          const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
-          resolve(buf.getChannelData(0).slice());
-        } finally {
-          ctx.close().catch(() => {});
-        }
+        resolve(await decode(new Blob(parts, { type: r.mimeType || 'audio/webm' })));
       } catch (e) {
         reject(new Error('تعذر قراءة التسجيل، جرّب تاني'));
       }
@@ -198,9 +199,21 @@ export function compare(ref, heardText) {
     const after = k < n - 1 ? pairHyp[k + 1] : -1;
     if (after >= 0 && sim(ref[k] + ref[k + 1], hyp[after]) >= 0.8) { status[k] = 'ok'; status[k + 1] = 'ok'; }
   }
+  for (let k = 0; k < n; k++) {
+    const h = pairHyp[k];
+    if (h < 0 || status[k] === 'ok') continue;
+    if ((h > 0 && sim(ref[k], hyp[h - 1] + hyp[h]) >= 0.8) || (h + 1 < m && sim(ref[k], hyp[h] + hyp[h + 1]) >= 0.8)) status[k] = 'ok';
+  }
 
   let points = 0;
   status.forEach((s) => { if (s === 'ok') points += 1; else if (s === 'near') points += 0.5; });
   const score = n ? Math.round((points * 100) / n) : 0;
   return { statuses: status, score, heard: hyp.join(' ') };
+}
+
+export function comparePartial(ref, text) {
+  const r = compare(ref, text);
+  let lastI = -1;
+  r.statuses.forEach((x, i) => { if (x === 'ok' || x === 'near') lastI = i; });
+  return { statuses: r.statuses.map((x, i) => (i > lastI ? 'pending' : x)), score: r.score, heard: r.heard };
 }
