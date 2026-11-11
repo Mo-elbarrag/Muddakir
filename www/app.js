@@ -3,6 +3,7 @@ import { parseAyah, splitChunks, buildStages, meaningSegment, chunksFromCuts, is
 
 const RECITERS = [
   { id: 'Minshawy_Murattal_128kbps', name: 'محمد صديق المنشاوي' },
+  { id: 'Husary_128kbps', name: 'الحصري · جودة عالية' },
   { id: 'Husary_64kbps', name: 'محمود خليل الحصري' },
   { id: 'Husary_Muallim_128kbps', name: 'الحصري (المصحف المعلّم)' }
 ];
@@ -471,7 +472,7 @@ function audioUrl(s, a) {
 async function getTimings(id) {
   if (timingCache[id] !== undefined) return timingCache[id];
   try {
-    const r = await fetch('data/timings/' + id + '.json');
+    const r = await fetch('data/timings/' + (id === 'Husary_128kbps' ? 'Husary_64kbps' : id) + '.json');
     timingCache[id] = r.ok ? await r.json() : null;
   } catch (e) {
     timingCache[id] = null;
@@ -832,9 +833,9 @@ async function fetchAudioBuffer(url) {
 }
 
 async function audioCuts(s, a, tokens, row) {
-  const ck = 'mdk-cuts3-' + reciterId(profile()) + '-' + s + '-' + a;
+  const ck = 'mdk-cuts5-' + reciterId(profile()) + '-' + s + '-' + a;
   if (cutCache[ck]) return cutCache[ck];
-  try { const v = JSON.parse(localStorage.getItem(ck)); if (Array.isArray(v)) { cutCache[ck] = v; return v; } } catch (e) { /* ignore */ }
+  try { const v = JSON.parse(localStorage.getItem(ck)); if (v && Array.isArray(v.c)) { cutCache[ck] = v; return v; } } catch (e) { /* ignore */ }
   const buf = await fetchAudioBuffer(audioUrl(s, a));
   const C = window.AudioContext || window.webkitAudioContext;
   const ctx = new C();
@@ -880,6 +881,8 @@ async function audioCuts(s, a, tokens, row) {
   tokens.forEach((t, i) => { if (t.c) words.push(i); });
   const W = words.length;
   const cuts = [];
+  const times = [];
+  const stopAfter = (k) => { const lim = k + 1 < W ? words[k + 1] : tokens.length; for (let i = words[k] + 1; i < lim; i++) if (!tokens[i].c && isStopMark(tokens[i].plain)) return true; return false; };
   if (segs.length >= 2) {
     const off = new OfflineAudioContext(1, Math.ceil(audio.duration * 16000), 16000);
     const node = off.createBufferSource();
@@ -901,17 +904,18 @@ async function audioCuts(s, a, tokens, row) {
       const hiW = Math.min(W, ptr + 45);
       const res = alignWords(sks.slice(ptr, hiW), heardSkeleton(script), false);
       let lastK = -1;
-      res.forEach((r, k) => { if (r.done && r.ratio >= 0.5) lastK = k; });
+      res.forEach((r, k) => { if ((r.done && r.ratio >= 0.5) || r.ratio >= 0.6) lastK = k; });
       if (lastK < 0) continue;
       const end = ptr + lastK;
       if (end >= W - 1) break;
-      cuts.push(end);
+      if (sil[g][1] - sil[g][0] >= 60 || stopAfter(end)) { cuts.push(end); times.push([sil[g][0] * 10, sil[g][1] * 10]); }
       ptr = end + 1;
     }
   }
-  cutCache[ck] = cuts;
-  try { localStorage.setItem(ck, JSON.stringify(cuts)); } catch (e) { /* ignore */ }
-  return cuts;
+  const result = { c: cuts, t: times };
+  cutCache[ck] = result;
+  try { localStorage.setItem(ck, JSON.stringify(result)); } catch (e) { /* ignore */ }
+  return result;
 }
 
 function screenPractice(params) {
@@ -959,7 +963,9 @@ function buildPractice(params, T, rid, cuts) {
   const st0 = p.ayat[key(s, a)];
   const last = a === sura.ayat.length;
   const L = lessonOf(s, a);
-  const stages = mode === 'learn' ? buildStages(cuts ? chunksFromCuts(tokens, cuts) : splitChunks(tokens, pausesFor(row, tokens))) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
+  const cutList = cuts ? (Array.isArray(cuts) ? cuts : cuts.c) : null;
+  const cutTimes = cuts && !Array.isArray(cuts) ? cuts.t : null;
+  const stages = mode === 'learn' ? buildStages(cutList ? chunksFromCuts(tokens, cutList) : splitChunks(tokens, pausesFor(row, tokens))) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
   const stepsOf = (stg) => (stg.kind === 'learn' ? ['listen', 'read', 'memory'] : stg.kind === 'link' ? ['listen', 'memory'] : ['memory']);
   let si = 0;
   if (mode === 'learn' && p.lastStage && p.lastStage.s === s && p.lastStage.a === a) si = Math.min(p.lastStage.si || 0, stages.length - 1);
@@ -1082,6 +1088,30 @@ function buildPractice(params, T, rid, cuts) {
     setStep(stepsOf(stage())[0]);
   }
 
+  function stageClip(stg) {
+    const base = stageClip(stg);
+    if (!cutTimes || !cutList || !cutList.length) return base;
+    const widx = [];
+    tokens.forEach((t, i) => { if (t.c) widx.push(i); });
+    const W = widx.length;
+    const fw = widx.findIndex((ti) => ti >= stg.from);
+    let lw = -1;
+    widx.forEach((ti, k) => { if (ti <= stg.to) lw = k; });
+    if (fw < 0 || lw < 0) return base;
+    let cs;
+    let ce;
+    if (fw === 0) cs = 0;
+    else { const ci = cutList.indexOf(fw - 1); if (ci >= 0) cs = Math.max(0, cutTimes[ci][1] / 1000 - 0.1); }
+    if (lw === W - 1) ce = null;
+    else { const ci = cutList.indexOf(lw); if (ci >= 0) ce = cutTimes[ci][0] / 1000 + 0.25; }
+    return (d) => {
+      const r = base(d);
+      if (cs !== undefined) r.start = cs;
+      if (ce !== undefined) r.end = ce;
+      return r;
+    };
+  }
+
   function drawAll() { drawMeta(); drawAyah(); drawControls(); setStatus(defaultStatus()); }
 
   function setStep(x, manual) {
@@ -1159,7 +1189,7 @@ function buildPractice(params, T, rid, cuts) {
     b.classList.add('playing');
     b.innerHTML = icon('pause', 19);
     const stg = stage();
-    const ok = await playRepeat(s, a, clipFor(row, tokens, stg.from, stg.to), n, highlight, (k) => { const l = $('#playLbl'); if (l) l.textContent = n > 1 ? arDigits(k) + ' من ' + arDigits(n) : 'بيشتغل'; });
+    const ok = await playRepeat(s, a, stageClip(stg), n, highlight, (k) => { const l = $('#playLbl'); if (l) l.textContent = n > 1 ? arDigits(k) + ' من ' + arDigits(n) : 'بيشتغل'; });
     playing = false;
     if (!b.isConnected) return;
     highlight(-1);
@@ -1228,7 +1258,7 @@ function buildPractice(params, T, rid, cuts) {
     let changed = false;
     ref.forEach((ti, k) => {
       const r = res[k];
-      if (!r.done) return;
+      if (!r.done && !(k === ref.length - 1 && r.ratio >= 0.6)) return;
       const st = r.ratio >= 0.7 ? 'ok' : r.ratio >= 0.5 ? 'near' : null;
       if (st && statuses[ti] !== 'ok' && statuses[ti] !== 'hint' && statuses[ti] !== st) { statuses[ti] = st; changed = true; }
     });
@@ -1479,7 +1509,7 @@ function screenRecite(params) {
     let changed = false;
     res.forEach((r, k) => {
       const g = lo + k;
-      if (!r.done) return;
+      if (!r.done && !(g === items.length - 1 && r.ratio >= 0.6)) return;
       const st = r.ratio >= 0.7 ? 'ok' : r.ratio >= 0.5 ? 'near' : null;
       if (st && status[g] !== 'ok' && status[g] !== 'hint' && status[g] !== st) { status[g] = st; changed = true; anchor = Math.max(anchor, g + 1); }
     });
