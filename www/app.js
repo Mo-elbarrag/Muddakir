@@ -462,7 +462,9 @@ function stopAudio() {
 }
 
 function audioUrl(s, a) {
-  return 'https://everyayah.com/data/' + reciterId(profile()) + '/' + pad3(s) + pad3(a) + '.mp3';
+  const rec = reciterId(profile());
+  if (dataBase && isDl(rec, s, a)) return dataBase + '/' + rec + '/' + pad3(s) + pad3(a) + '.mp3';
+  return remoteUrl(rec, s, a);
 }
 
 async function getTimings(id) {
@@ -712,16 +714,16 @@ function screenHome() {
   app.innerHTML = '<header class="top"><span class="logo">' + brandMark(38) + '</span><div class="hello grow"><small>السلام عليكم</small><b>' + esc(p.name) + '</b></div>' +
     '<button class="ibtn" id="settings" aria-label="الإعدادات">' + icon('sliders') + '</button></header><main class="wrap">' +
     '<section class="wird"><div class="wird-in"><div class="wird-top"><span>وِرد اليوم</span><span>' + arDigits(Math.min(done, goal)) + ' / ' + arDigits(goal) + '</span></div>' +
-    '<b>' + (pos ? 'سورة ' + esc(QURAN[pos.s - 1].name) + ' · من آية ' + arDigits(pos.a) : 'ابدأ وِردك من أي سورة') + '</b>' +
+    planLine(p, pos) +
     (done >= goal ? '<p>أتممت وِرد اليوم، تقبّل الله منك</p>' : '') + segs +
-    '<button class="gold-btn" id="cont">' + (pos ? 'كمّل الحفظ' : 'ابدأ الحفظ') + '</button></div></section>' +
+    '<button class="gold-btn" id="cont">' + (planActive(p) ? 'كمّل الخطة' : pos ? 'كمّل الحفظ' : 'ابدأ الحفظ') + '</button></div></section>' +
     divider() +
     '<div class="tiles"><button class="tile" id="rev"><b>' + arDigits(due) + '</b><small>للمراجعة</small></button>' +
     '<button class="tile" id="memT"><b>' + arDigits(mem) + '</b><small>آية محفوظة</small></button>' +
     '<button class="tile wide" id="acts">' + icon('puzzle', 20) + '<span>الأنشطة</span>' + icon('chevronLeft', 18) + '</button>' +
     '<button class="tile wide" id="awardsT">' + icon('sparkle', 20) + '<span>إنجازاتي</span>' + (awardsN ? '<small>' + arDigits(awardsN) + '</small>' : '') + icon('chevronLeft', 18) + '</button></div>' +
     '</main>' + navBar('home');
-  $('#cont').onclick = () => { if (pos) go('practice', { s: pos.s, a: pos.a }); else tab('surahs'); };
+  $('#cont').onclick = () => { if (planActive(p)) { const nx = planNext(p); if (nx) go('practice', { s: nx.s, a: nx.a }); else toast('أتممت الخطة، ما شاء الله تبارك الله'); return; } if (pos) go('practice', { s: pos.s, a: pos.a }); else tab('surahs'); };
   $('#rev').onclick = () => tab('reviewHub');
   $('#memT').onclick = () => tab('surahs');
   $('#acts').onclick = () => tab('activities');
@@ -794,7 +796,7 @@ function screenSurah(params) {
     '<section class="card"><h2>التسميع من الذاكرة</h2><p class="muted small">اختار الآيات اللي عايز تسمّعها مرة واحدة من غير توقف، أو سمّع السورة كاملة.</p>' +
     '<div class="seg"><label class="opt" style="flex:1;gap:6px">من <select id="rFrom" class="time">' + opts + '</select></label>' +
     '<label class="opt" style="flex:1;gap:6px">إلى <select id="rTo" class="time">' + opts + '</select></label></div>' +
-    '<button class="primary" id="reciteRange">ابدأ التسميع</button><button class="light-btn" id="reciteAll">سمّع السورة كاملة</button></section></main>';
+    '<button class="primary" id="reciteRange">ابدأ التسميع</button><button class="light-btn" id="reciteAll">سمّع السورة كاملة</button></section>' + downloadCard(s) + '</main>';
   $('#go').onclick = () => go('practice', { s, a: next }, true);
   $$('.lesson-list .row').forEach((b) => { b.onclick = () => go('practice', { s, a: +b.dataset.a }); });
   const rf = $('#rFrom');
@@ -807,6 +809,7 @@ function screenSurah(params) {
     go('recite', { s, from: fr, to, purpose: 'surah' });
   };
   $('#reciteAll').onclick = () => go('recite', { s, from: 1, to: len, purpose: 'surah' });
+  bindDownload(s);
 }
 
 const cutCache = {};
@@ -1909,6 +1912,8 @@ function screenSettings() {
     '<button class="light-btn" id="remTest">جرّب الإشعار دلوقتي</button>' +
     '<p class="muted small">إشعار كل يوم يفكّرك بوِردك، وبيشتغل من غير إنترنت.</p></section>' +
     '<section class="card"><h2>وِرد اليوم (آيات جديدة)</h2>' + seg('goalSeg', GOALS, p.goal) + '</section>' +
+    '<section class="card"><h2>خطة الحفظ</h2>' + seg('planSeg', ['none', 'amma', 'tabarak', 'all'], p.plan || 'none', (v) => PLAN_NAMES[v]) + '<p class="muted small">الخطة بتختارلك الآية الجاية لوحدها، وبتحسب هتتمّها إمتى على حسب وِردك اليومي.</p></section>' +
+    '<section class="card"><h2>لوحة المتابعة</h2><p class="muted small">تقدّم كل أفراد العيلة في مكان واحد.</p><button class="light-btn" id="family">افتح لوحة المتابعة</button></section>' +
     '<section class="card"><h2>عدد مرات الاستماع للمقطع</h2>' + seg('repSeg', REPEATS, p.repeat) + '</section>' +
     '<section class="card"><h2>القارئ</h2>' + RECITERS.map((r) =>
       '<label class="opt"><input type="radio" name="reciter" value="' + r.id + '" ' + (reciterId(p) === r.id ? 'checked' : '') + '> ' + r.name + '</label>').join('') + '</section>' +
@@ -1942,6 +1947,8 @@ function screenSettings() {
   $$('#tjSeg button').forEach((b) => { b.onclick = () => { p.tajweed = b.dataset.v === 'on'; save(); render(history.state); }; });
   $$('#modeSeg button').forEach((b) => { b.onclick = () => { p.mode = b.dataset.v; save(); render(history.state); }; });
   $$('input[name=reciter]').forEach((r) => { r.onchange = () => { p.reciter = r.value; save(); toast('تم تغيير القارئ'); }; });
+  $$('#planSeg button').forEach((b) => { b.onclick = () => { p.plan = b.dataset.v; save(); render(history.state); }; });
+  $('#family').onclick = () => go('family');
   $('#exp').onclick = () => exportBackup();
   $('#imp').onclick = () => $('#impFile').click();
   $('#impFile').onchange = (e) => importBackup(e.target.files && e.target.files[0]);
@@ -1953,6 +1960,182 @@ function screenSettings() {
     save();
     go('profiles', {}, true);
   };
+}
+
+const PLAN_NAMES = { none: 'من غير خطة', amma: 'جزء عمّ', tabarak: 'جزء تبارك', all: 'القرآن كاملًا' };
+
+function planOrder(plan) {
+  if (plan === 'amma') return range(78, 114).reverse();
+  if (plan === 'tabarak') return range(67, 77);
+  if (plan === 'all') return range(1, 114);
+  return [];
+}
+
+const planActive = (p) => !!(p.plan && p.plan !== 'none');
+
+function planNext(p) {
+  for (const s of planOrder(p.plan)) {
+    if (memCount(s) < QURAN[s - 1].ayat.length) return { s, a: firstUnmemorized(s) };
+  }
+  return null;
+}
+
+function planStats(p) {
+  let total = 0;
+  let mem = 0;
+  planOrder(p.plan).forEach((s) => { total += QURAN[s - 1].ayat.length; mem += memCount(s); });
+  const left = total - mem;
+  return { total, mem, left, days: Math.ceil(left / Math.max(1, p.goal || 5)) };
+}
+
+function planLine(p, pos) {
+  if (planActive(p)) {
+    const st = planStats(p);
+    const nx = planNext(p);
+    return '<b>خطتك: ' + PLAN_NAMES[p.plan] + '</b><p>' + (st.left
+      ? 'محفوظ ' + arDigits(st.mem) + ' من ' + arDigits(st.total) + ' · تتمّها بإذن الله خلال ' + arDigits(st.days) + ' يوم' + (nx ? ' · التالي: ' + esc(QURAN[nx.s - 1].name) + ' ' + arDigits(nx.a) : '')
+      : 'أتممت الخطة، ما شاء الله تبارك الله') + '</p>';
+  }
+  return '<b>' + (pos ? 'سورة ' + esc(QURAN[pos.s - 1].name) + ' · من آية ' + arDigits(pos.a) : 'ابدأ وِردك من أي سورة') + '</b>';
+}
+
+const DL_KEY = 'mdk-dl';
+let dlIdx = null;
+let dataBase = null;
+let dlRunning = null;
+
+function dl() {
+  if (!dlIdx) { try { dlIdx = JSON.parse(localStorage.getItem(DL_KEY)) || {}; } catch (e) { dlIdx = {}; } }
+  return dlIdx;
+}
+
+function dlSave() { try { localStorage.setItem(DL_KEY, JSON.stringify(dl())); } catch (e) { /* ignore */ } }
+
+const remoteUrl = (rec, s, a) => 'https://everyayah.com/data/' + rec + '/' + pad3(s) + pad3(a) + '.mp3';
+const dlPath = (rec, s, a) => 'audio/' + rec + '/' + pad3(s) + pad3(a) + '.mp3';
+const isDl = (rec, s, a) => !!(dl()[rec] && dl()[rec][s + ':' + a]);
+
+async function initDataBase() {
+  const FS = capPlugin('Filesystem');
+  if (!FS || !window.Capacitor || !window.Capacitor.convertFileSrc) return;
+  try {
+    const r = await FS.getUri({ path: 'audio', directory: 'DATA' });
+    dataBase = window.Capacitor.convertFileSrc(r.uri);
+  } catch (e) {
+    dataBase = null;
+  }
+}
+
+function toB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function dlCount(rec, s) {
+  const len = QURAN[s - 1].ayat.length;
+  let n = 0;
+  for (let a = 1; a <= len; a++) if (isDl(rec, s, a)) n++;
+  return n;
+}
+
+async function downloadSurah(s, onProg) {
+  const FS = capPlugin('Filesystem');
+  if (!FS) throw new Error('التحميل متاح على الموبايل بس');
+  const rec = reciterId(profile());
+  const len = QURAN[s - 1].ayat.length;
+  const token = {};
+  dlRunning = token;
+  let done = 0;
+  for (let a = 1; a <= len; a++) {
+    if (dlRunning !== token) { dlSave(); return false; }
+    if (!isDl(rec, s, a)) {
+      const buf = await fetchAudioBuffer(remoteUrl(rec, s, a));
+      await FS.writeFile({ path: dlPath(rec, s, a), data: toB64(buf), directory: 'DATA', recursive: true });
+      dl()[rec] = dl()[rec] || {};
+      dl()[rec][s + ':' + a] = 1;
+      if (a % 5 === 0) dlSave();
+    }
+    done++;
+    onProg(done, len);
+  }
+  dlSave();
+  if (dlRunning === token) dlRunning = null;
+  return true;
+}
+
+async function deleteSurah(s) {
+  const FS = capPlugin('Filesystem');
+  const rec = reciterId(profile());
+  const len = QURAN[s - 1].ayat.length;
+  for (let a = 1; a <= len; a++) {
+    if (!isDl(rec, s, a)) continue;
+    try { await FS.deleteFile({ path: dlPath(rec, s, a), directory: 'DATA' }); } catch (e) { /* ignore */ }
+    delete dl()[rec][s + ':' + a];
+  }
+  dlSave();
+}
+
+function downloadCard(s) {
+  const rec = reciterId(profile());
+  const len = QURAN[s - 1].ayat.length;
+  const n = dlCount(rec, s);
+  const rname = (RECITERS.find((r) => r.id === rec) || RECITERS[0]).name;
+  return '<section class="card"><h2>الاستماع من غير إنترنت</h2><p class="muted small" id="dlStatus">' +
+    (n === len ? 'السورة متحمّلة بصوت ' + esc(rname) + '، وبتشتغل من غير إنترنت'
+      : n ? 'متحمّل ' + arDigits(n) + ' من ' + arDigits(len) + ' آية بصوت ' + esc(rname)
+        : 'حمّل صوت السورة مرة واحدة، وبعدها الاستماع والتقسيم يشتغلوا من غير إنترنت') + '</p>' +
+    (n < len ? '<button class="primary" id="dlBtn">' + (n ? 'كمّل التحميل' : 'تحميل السورة') + '</button>' : '') +
+    (n ? '<button class="light-btn" id="dlDel">حذف التحميل</button>' : '') + '</section>';
+}
+
+function bindDownload(s) {
+  const b = $('#dlBtn');
+  const del = $('#dlDel');
+  const st = $('#dlStatus');
+  if (b) {
+    b.onclick = async () => {
+      if (dlRunning) { dlRunning = null; b.textContent = 'كمّل التحميل'; return; }
+      b.textContent = 'إيقاف التحميل';
+      try {
+        const ok = await downloadSurah(s, (d, t) => { if (st && st.isConnected) st.textContent = 'جاري التحميل… ' + arDigits(d) + ' من ' + arDigits(t); });
+        if (ok) { toast('تم تحميل السورة بحمد الله'); if (b.isConnected) render(history.state); }
+      } catch (e) {
+        dlRunning = null;
+        toast('تعذر التحميل، اتأكد من الإنترنت');
+        if (b.isConnected) b.textContent = 'كمّل التحميل';
+      }
+    };
+  }
+  if (del) {
+    del.onclick = async () => {
+      if (!confirm('حذف صوت السورة من الموبايل؟')) return;
+      await deleteSurah(s);
+      render(history.state);
+    };
+  }
+}
+
+function screenFamily() {
+  const t = dayKey();
+  const days = ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+  const week = range(0, 6).map((i) => { const d = new Date(); d.setDate(d.getDate() + i - 6); return { k: dayKey(i - 6), n: days[d.getDay()] }; });
+  app.innerHTML = topBar('لوحة المتابعة', true) + '<main class="wrap">' + db.profiles.map((pp) => {
+    const vals = Object.values(pp.ayat || {});
+    const mem = vals.filter((x) => x.lvl >= 1).length;
+    const due = vals.filter((x) => x.lvl >= 1 && x.due && x.due <= t).length;
+    const acc = pp.attempts ? Math.round(pp.scoreSum / pp.attempts) + '%' : '—';
+    const set = new Set(pp.days || []);
+    const mistakes = Object.entries(pp.mistakes || {}).sort((x, y) => y[1] - x[1]).slice(0, 3);
+    return '<section class="card"><div class="row-h"><span class="initial">' + esc(pp.name.charAt(0)) + '</span><div class="grow"><b>' + esc(pp.name) + '</b><small class="muted">' +
+      (pp.mode === 'kids' ? 'وضع الطفل' : 'وضع الكبار') + (planActive(pp) ? ' · خطة ' + PLAN_NAMES[pp.plan] : '') + '</small></div></div>' +
+      '<div class="stats4"><div><b>' + arDigits(mem) + '</b><small>محفوظ</small></div><div><b>' + arDigits(due) + '</b><small>للمراجعة</small></div>' +
+      '<div><b>' + acc + '</b><small>الدقة</small></div><div><b>' + arDigits(streakOf(pp)) + '</b><small>أيام متتالية</small></div></div>' +
+      '<div class="week">' + week.map((w) => '<span><i class="' + (set.has(w.k) ? 'on' : '') + '"></i><small>' + w.n + '</small></span>').join('') + '</div>' +
+      (mistakes.length ? '<p class="muted small">أكتر آيات محتاجة تركيز: ' + mistakes.map(([k]) => { const [ss, aa] = k.split(':').map(Number); return esc(QURAN[ss - 1].name) + ' ' + arDigits(aa); }).join('، ') + '</p>' : '') +
+      '</section>';
+  }).join('') + '</main>';
 }
 
 function go(screen, params = {}, replace = false) {
@@ -1983,6 +2166,7 @@ function render(state) {
       case 'quiz': screenQuiz(params); break;
       case 'lessonDone': screenLessonDone(params); break;
       case 'quizEnd': screenQuizEnd(params); break;
+      case 'family': screenFamily(); break;
       case 'reviewHub': screenReviewHub(); break;
       case 'review': screenReview(); break;
       case 'activities': screenActivities(); break;
@@ -1997,6 +2181,7 @@ function render(state) {
 
 async function init() {
   applyTheme();
+  initDataBase();
   if (window.matchMedia) {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => { if (db.settings.theme === 'auto') applyTheme(); };
