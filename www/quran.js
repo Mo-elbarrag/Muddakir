@@ -14,7 +14,7 @@ export const LEGEND = [
   ['tj-silent', 'لا يُنطق']
 ];
 
-const PARTICLES = new Set(['لا', 'ما', 'من', 'في', 'علي', 'الي', 'عن', 'ان', 'لم', 'لن', 'قد', 'ثم', 'او', 'يا', 'الذي', 'الذين', 'التي', 'بل', 'اذا', 'لو', 'كل', 'اذ', 'لكن', 'حتي', 'ام', 'هل', 'كما', 'مما', 'الا', 'لما', 'ولا', 'وما', 'ومن', 'وفي', 'فلا', 'فما', 'وان', 'فان', 'لقد', 'ولقد', 'انما', 'بما', 'بان', 'لان', 'كان', 'وكان', 'يوم', 'عند', 'بين', 'قل', 'قال', 'قالوا', 'وقال', 'فقال', 'وهو', 'وهم', 'الذين', 'والذين']);
+const PARTICLES = new Set(['لا', 'ما', 'من', 'في', 'علي', 'الي', 'عن', 'ان', 'لم', 'لن', 'قد', 'ثم', 'او', 'يا', 'الذي', 'الذين', 'التي', 'بل', 'اذا', 'لو', 'كل', 'اذ', 'لكن', 'حتي', 'ام', 'هل', 'كما', 'مما', 'الا', 'لما', 'ولا', 'وما', 'ومن', 'وفي', 'فلا', 'فما', 'وان', 'فان', 'لقد', 'ولقد', 'انما', 'بما', 'بان', 'لان', 'كان', 'وكان', 'يوم', 'عند', 'بين', 'قل', 'قال', 'قالوا', 'وقال', 'فقال', 'وهو', 'وهم', 'والذين']);
 const COMPLEMENTS = new Set(['لنا', 'له', 'لهم', 'لكم', 'لك', 'لي', 'لها', 'به', 'بها', 'بهم', 'بكم', 'فيه', 'فيها', 'فيهم', 'عليه', 'عليها', 'عليهم', 'عليكم', 'علينا', 'منه', 'منها', 'منهم', 'منكم', 'عنه', 'عنهم', 'اليه', 'اليهم', 'اليكم', 'الينا', 'معه', 'معهم', 'معكم']);
 
 const escT = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -67,11 +67,8 @@ export function parseAyah(text) {
   return tokens;
 }
 
-export function splitChunks(tokens, pauses) {
-  const words = [];
-  tokens.forEach((t, i) => { if (t.c) words.push(i); });
-  const W = words.length;
-  if (W <= 5) return [[0, tokens.length - 1]];
+function dpSplit(tokens, words, pauses, a, b) {
+  const W = b - a + 1;
   const cutScore = (k) => {
     const ti = words[k];
     const tn = words[k + 1];
@@ -102,18 +99,65 @@ export function splitChunks(tokens, pauses) {
   for (let i = 1; i <= W; i++) {
     for (let j = Math.max(0, i - 12); j < i; j++) {
       if (best[j] === Infinity) continue;
-      const c = best[j] + sizeCost(i - j) - (i < W ? cutScore(i - 1) : 0);
+      const c = best[j] + sizeCost(i - j) - (i < W ? cutScore(a + i - 1) : 0);
       if (c < best[i]) { best[i] = c; prev[i] = j; }
     }
   }
-  const bounds = [];
+  const out = [];
   let i = W;
   while (i > 0) {
     const j = prev[i];
-    bounds.unshift([j, i]);
+    out.unshift([a + j, a + i - 1]);
     i = j;
   }
-  return bounds.map(([j, e]) => [j === 0 ? 0 : words[j], e === W ? tokens.length - 1 : words[e] - 1]);
+  return out;
+}
+
+export function splitChunks(tokens, pauses) {
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  const W = words.length;
+  if (W <= 4) return [[0, tokens.length - 1]];
+  let groups;
+  if (pauses) {
+    const cuts = [];
+    for (let k = 0; k + 1 < W; k++) {
+      const ps = pauses[words[k]];
+      const mark = words[k + 1] - words[k] > 1;
+      if (ps !== null && ps !== undefined && (ps >= 280 || (mark && ps >= 150))) cuts.push(k);
+    }
+    groups = [];
+    let st = 0;
+    for (const k of cuts) { groups.push([st, k]); st = k + 1; }
+    groups.push([st, W - 1]);
+    let changed = true;
+    while (changed && groups.length > 1) {
+      changed = false;
+      for (let g = 0; g < groups.length; g++) {
+        if (groups[g][1] - groups[g][0] + 1 >= 2) continue;
+        if (g === 0) groups[1][0] = groups[0][0];
+        else if (g === groups.length - 1) groups[g - 1][1] = groups[g][1];
+        else {
+          const prevLen = groups[g - 1][1] - groups[g - 1][0] + 1;
+          const nextLen = groups[g + 1][1] - groups[g + 1][0] + 1;
+          if (prevLen <= nextLen) groups[g - 1][1] = groups[g][1];
+          else groups[g + 1][0] = groups[g][0];
+        }
+        groups.splice(g, 1);
+        changed = true;
+        break;
+      }
+    }
+    const out = [];
+    for (const [a, b] of groups) {
+      if (b - a + 1 > 12) out.push(...dpSplit(tokens, words, pauses, a, b));
+      else out.push([a, b]);
+    }
+    groups = out;
+  } else {
+    groups = W <= 5 ? [[0, W - 1]] : dpSplit(tokens, words, null, 0, W - 1);
+  }
+  return groups.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === groups.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
 }
 
 export function buildStages(chunks) {

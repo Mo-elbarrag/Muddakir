@@ -250,17 +250,35 @@ async function getTimings(id) {
   return timingCache[id];
 }
 
+function rowMapper(n, tokens) {
+  if (n === tokens.length) return (i) => i;
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  if (n === words.length) {
+    const m = new Map(words.map((ti, k) => [ti, k]));
+    return (i) => {
+      if (m.has(i)) return m.get(i);
+      let k = 0;
+      for (const ti of words) { if (ti > i) break; k = m.get(ti); }
+      return k;
+    };
+  }
+  return (i) => Math.min(n - 1, Math.round((i * n) / tokens.length));
+}
+
 function pausesFor(row, tokens) {
-  if (!row || row[0] !== tokens.length || row.length < 1 + 2 * row[0]) return null;
+  if (!row) return null;
   const n = row[0];
+  if (row.length < 1 + 2 * n) return null;
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  if (n !== tokens.length && n !== words.length) return null;
+  const map = rowMapper(n, tokens);
   const st = row.slice(1, 1 + n);
   const en = row.slice(1 + n, 1 + 2 * n);
-  const out = new Array(n).fill(null);
-  let prevWord = -1;
-  for (let i = 0; i < n; i++) {
-    if (!tokens[i].c) continue;
-    if (prevWord >= 0) out[prevWord] = st[i] - en[prevWord];
-    prevWord = i;
+  const out = new Array(tokens.length).fill(null);
+  for (let k = 0; k + 1 < words.length; k++) {
+    out[words[k]] = st[map(words[k + 1])] - en[map(words[k])];
   }
   return out;
 }
@@ -275,7 +293,7 @@ function clipFor(row, tokens, from, to) {
     const n = row[0];
     const st = row.slice(1, 1 + n);
     const en = row.length >= 1 + 2 * n ? row.slice(1 + n, 1 + 2 * n) : null;
-    const map = (i) => (n === tokens.length ? i : Math.min(n - 1, Math.round((i * n) / tokens.length)));
+    const map = rowMapper(n, tokens);
     const words = [];
     for (let i = from; i <= to; i++) if (tokens[i].c) words.push({ i, t: st[map(i)] / 1000 });
     const li = map(lw);
@@ -373,7 +391,7 @@ function topBar(title, back) {
 function navBar(active) {
   const items = [['home', 'home', 'الرئيسية'], ['surahs', 'book', 'السور'], ['reviewHub', 'refresh', 'المراجعة'], ['activities', 'puzzle', 'أنشطة']];
   return '<nav class="nav">' + items.map(([id, ic, label]) =>
-    '<button data-tab="' + id + '" class="' + (id === active ? 'on' : '') + '" aria-label="' + label + '">' + icon(ic, 20) + '</button>').join('') + '</nav>';
+    '<button data-tab="' + id + '" class="' + (id === active ? 'on' : '') + '" aria-label="' + label + '">' + icon(ic, 20) + '<span>' + label + '</span></button>').join('') + '</nav>';
 }
 
 const curDepth = () => (history.state && history.state.depth) || 0;

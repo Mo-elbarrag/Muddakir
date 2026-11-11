@@ -165,3 +165,7 @@ details.heard{margin-top:8px;font-size:13px;color:var(--muted)}
 .modal-box{background:var(--card);border-radius:16px;padding:20px;width:min(340px,90%);text-align:center}
 .pbar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:12px}
 .pbar i{display:block;height:100%;width:0;background:var(--navy);transition:width .2s}
+.nav{padding:6px 8px}
+.nav button{width:auto;min-width:64px;height:auto;flex-direction:column;gap:2px;padding:6px 8px;border-radius:14px;font-size:10px}
+.nav button span{line-height:1.2}
+body.has-nav .wrap{padding-bottom:calc(112px + env(safe-area-inset-bottom))}
