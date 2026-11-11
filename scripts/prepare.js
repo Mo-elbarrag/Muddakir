@@ -57,8 +57,7 @@ async function buildTafsir() {
   const json = await res.json();
   const surahs = json && json.data && json.data.surahs;
   if (!Array.isArray(surahs) || surahs.length !== 114) throw new Error('unexpected tafsir data');
-  const data = surahs.map((s) => s.ayahs.map((a) => String(a.text || '').trim()));
-  fs.writeFileSync(path.join(DATA, 'tafsir.json'), JSON.stringify(data));
+  fs.writeFileSync(path.join(DATA, 'tafsir.json'), JSON.stringify(surahs.map((s) => s.ayahs.map((a) => String(a.text || '').trim()))));
   console.log('tafsir.json ready');
 }
 
@@ -105,8 +104,7 @@ async function buildTimings() {
   fs.rmSync(TMP, { recursive: true, force: true });
   fs.mkdirSync(TMP, { recursive: true });
   const file = path.join(TMP, asset.name);
-  const buf = Buffer.from(await (await fetchRetry(asset.browser_download_url)).arrayBuffer());
-  fs.writeFileSync(file, buf);
+  fs.writeFileSync(file, Buffer.from(await (await fetchRetry(asset.browser_download_url)).arrayBuffer()));
   const out = path.join(TMP, 'x');
   fs.mkdirSync(out);
   if (/\.zip$/i.test(asset.name)) execSync('unzip -o -q "' + file + '" -d "' + out + '"');
@@ -133,25 +131,58 @@ async function buildTimings() {
   }
 }
 
-async function buildFont() {
-  fs.mkdirSync(FONTS, { recursive: true });
-  const sources = [
-    ['https://cdn.jsdelivr.net/npm/@fontsource/amiri-quran/files/amiri-quran-arabic-400-normal.woff2', 'quran.woff2'],
-    ['https://raw.githubusercontent.com/google/fonts/main/ofl/amiriquran/AmiriQuran-Regular.ttf', 'quran.ttf']
-  ];
+async function downloadFirst(sources, dir) {
   for (const [url, name] of sources) {
     try {
       const res = await fetchRetry(url, {}, 2);
       const b = Buffer.from(await res.arrayBuffer());
       if (b.length < 10000) throw new Error('file too small');
-      fs.writeFileSync(path.join(FONTS, name), b);
-      console.log('font ready from ' + url);
-      return;
+      fs.writeFileSync(path.join(dir, name), b);
+      console.log('ready: ' + name + ' from ' + url);
+      return true;
     } catch (e) {
-      console.warn('font source failed: ' + e.message);
+      console.warn('source failed: ' + e.message);
     }
   }
-  console.warn('WARNING: Quran font not downloaded, the app will use the system font');
+  return false;
+}
+
+async function buildFonts() {
+  fs.mkdirSync(FONTS, { recursive: true });
+  const q = await downloadFirst([
+    ['https://cdn.jsdelivr.net/npm/@fontsource/amiri-quran/files/amiri-quran-arabic-400-normal.woff2', 'quran.woff2'],
+    ['https://raw.githubusercontent.com/google/fonts/main/ofl/amiriquran/AmiriQuran-Regular.ttf', 'quran.ttf']
+  ], FONTS);
+  if (!q) console.warn('WARNING: Quran font not downloaded');
+  for (const w of ['400', '600']) {
+    const ok = await downloadFirst([
+      ['https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-' + w + '-normal.woff2', 'ui-' + w + '.woff2']
+    ], FONTS);
+    if (!ok) console.warn('WARNING: UI font ' + w + ' not downloaded');
+  }
+}
+
+async function buildModel() {
+  const dir = path.join(ROOT, 'www', 'models');
+  fs.mkdirSync(dir, { recursive: true });
+  const res = await fetchRetry('https://huggingface.co/Hisnlabs/tajweed-v2/resolve/main/onnx/model-int8.onnx');
+  const b = Buffer.from(await res.arrayBuffer());
+  if (b.length < 5000000) throw new Error('model file too small: ' + b.length);
+  fs.writeFileSync(path.join(dir, 'tajweed-int8.onnx'), b);
+  console.log('model ready: ' + (b.length / 1e6).toFixed(1) + ' MB');
+}
+
+function copyOrt() {
+  const dist = path.join(ROOT, 'node_modules', 'onnxruntime-web', 'dist');
+  const out = path.join(ROOT, 'www', 'vendor', 'ort');
+  fs.mkdirSync(out, { recursive: true });
+  const files = fs.readdirSync(dist);
+  const want = files.filter((f) => f === 'ort.wasm.min.js' || f === 'ort.min.js' || /^ort-wasm-simd-threaded\.(wasm|mjs|js)$/.test(f));
+  if (!want.some((f) => /^ort.*min\.js$/.test(f)) || !want.some((f) => /\.wasm$/.test(f))) {
+    throw new Error('onnxruntime-web files not found. dist has: ' + files.join(', '));
+  }
+  for (const f of want) fs.copyFileSync(path.join(dist, f), path.join(out, f));
+  console.log('ort ready: ' + want.join(', '));
 }
 
 (async () => {
@@ -159,7 +190,9 @@ async function buildFont() {
   await buildQuran();
   try { await buildTafsir(); } catch (e) { console.warn('WARNING: tafsir skipped: ' + e.message); }
   try { await buildTimings(); } catch (e) { console.warn('WARNING: word timings skipped: ' + e.message); }
-  await buildFont();
+  await buildFonts();
+  await buildModel();
+  copyOrt();
   fs.rmSync(TMP, { recursive: true, force: true });
 })().catch((e) => {
   console.error(e);
