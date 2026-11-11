@@ -94,6 +94,7 @@ let QURAN = [];
 let db = loadDb();
 let recording = false;
 let renderSeq = 0;
+let tafsirData;
 const skipped = new Set();
 const tokenCache = new Map();
 const timingCache = {};
@@ -245,6 +246,17 @@ async function ensureModel() {
   }
 }
 
+async function getTafsir() {
+  if (tafsirData !== undefined) return tafsirData;
+  try {
+    const r = await fetch('data/tafsir.json');
+    tafsirData = r.ok ? await r.json() : null;
+  } catch (e) {
+    tafsirData = null;
+  }
+  return tafsirData;
+}
+
 let player = null;
 let playToken = 0;
 let pendingStop = null;
@@ -274,20 +286,38 @@ async function getTimings(id) {
   return timingCache[id];
 }
 
-async function clipFor(s, a, tokens, from, to) {
-  const T = await getTimings(reciterId(profile()));
-  const row = T && T[s + ':' + a];
+function pausesFor(row, tokens) {
+  if (!row || row[0] !== tokens.length || row.length < 1 + 2 * row[0]) return null;
+  const n = row[0];
+  const st = row.slice(1, 1 + n);
+  const en = row.slice(1 + n, 1 + 2 * n);
+  const out = new Array(n).fill(null);
+  let prevWord = -1;
+  for (let i = 0; i < n; i++) {
+    if (!tokens[i].c) continue;
+    if (prevWord >= 0) out[prevWord] = st[i] - en[prevWord];
+    prevWord = i;
+  }
+  return out;
+}
+
+function clipFor(row, tokens, from, to) {
   const full = from === 0 && to === tokens.length - 1;
-  if (row) {
+  let fw = from;
+  while (fw <= to && !tokens[fw].c) fw++;
+  let lw = to;
+  while (lw >= from && !tokens[lw].c) lw--;
+  if (row && fw <= lw) {
     const n = row[0];
-    const starts = row.slice(1, 1 + n);
-    const end = row[1 + n];
+    const st = row.slice(1, 1 + n);
+    const en = row.length >= 1 + 2 * n ? row.slice(1 + n, 1 + 2 * n) : null;
     const map = (i) => (n === tokens.length ? i : Math.min(n - 1, Math.round((i * n) / tokens.length)));
     const words = [];
-    for (let i = from; i <= to; i++) if (tokens[i].c) words.push({ i, t: starts[map(i)] / 1000 });
-    const ei = map(to);
-    const startS = full ? 0 : Math.max(0, starts[map(from)] / 1000 - 0.05);
-    const endS = (ei + 1 < n && !full ? starts[ei + 1] : end) / 1000 + 0.15;
+    for (let i = from; i <= to; i++) if (tokens[i].c) words.push({ i, t: st[map(i)] / 1000 });
+    const li = map(lw);
+    const endMs = en ? en[li] : (li + 1 < n ? st[li + 1] : null);
+    const startS = full ? 0 : Math.max(0, st[map(fw)] / 1000 - 0.08);
+    const endS = endMs !== null && endMs !== undefined ? endMs / 1000 + 0.3 : null;
     return () => ({ start: startS, end: endS, words });
   }
   return (duration) => {
@@ -381,10 +411,21 @@ function navBar(active) {
     '<button data-tab="' + id + '" class="' + (id === active ? 'on' : '') + '">' + icon(ic) + label + '</button>').join('') + '</nav>';
 }
 
+const curDepth = () => (history.state && history.state.depth) || 0;
+
+function goBack() {
+  if (!document.getElementById('modal').hidden) return;
+  const st = history.state || {};
+  if ((st.depth || 0) > 0) { history.back(); return; }
+  if (profile() && st.screen && st.screen !== 'home' && st.screen !== 'profiles') { go('home', {}, true); return; }
+  const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if (CapApp && CapApp.exitApp) CapApp.exitApp();
+}
+
 function tab(target) {
   const cur = (history.state && history.state.screen) || 'home';
   if (target === cur) return;
-  if (target === 'home') { history.back(); return; }
+  if (target === 'home') { goBack(); return; }
   go(target, {}, cur !== 'home');
 }
 
@@ -505,19 +546,26 @@ function screenSurahs() {
 }
 
 function screenPractice(params) {
+  const sura = QURAN[params.s - 1];
+  if (!sura) { go('home', {}, true); return; }
+  const rid = renderSeq;
+  app.innerHTML = topBar('سورة ' + sura.name, true) + '<main class="wrap"><p class="muted center">جاري التحضير…</p></main>';
+  getTimings(reciterId(profile())).then((T) => { if (rid === renderSeq) buildPractice(params, T, rid); });
+}
+
+function buildPractice(params, T, rid) {
   const s = params.s;
   const sura = QURAN[s - 1];
-  if (!sura) { go('home', {}, true); return; }
   const mode = params.mode || 'learn';
   const a = Math.min(Math.max(1, params.a || 1), sura.ayat.length);
   const p = profile();
   const kids = p.mode === 'kids';
-  const rid = renderSeq;
   const alive = () => rid === renderSeq;
   const tokens = ayahTokens(s, a);
+  const row = T && T[s + ':' + a];
   const st0 = p.ayat[key(s, a)];
   const last = a === sura.ayat.length;
-  const stages = mode === 'learn' ? buildStages(splitChunks(tokens)) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
+  const stages = mode === 'learn' ? buildStages(splitChunks(tokens, pausesFor(row, tokens))) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
   const stepsOf = (stg) => (stg.kind === 'learn' ? ['listen', 'read', 'memory'] : stg.kind === 'link' ? ['listen', 'memory'] : ['memory']);
   let si = 0;
   if (mode === 'learn' && p.lastStage && p.lastStage.s === s && p.lastStage.a === a) si = Math.min(p.lastStage.si || 0, stages.length - 1);
@@ -529,7 +577,6 @@ function screenPractice(params) {
   let recToken = 0;
   const times = p.repeat;
   if (mode === 'learn') { p.lastPos = { s, a }; save(); }
-  getTimings(reciterId(p));
   const remaining = mode === 'review' ? dueList().filter((x) => !skipped.has(x.k)).length : 0;
   const title = mode === 'review' ? 'المراجعة' : 'سورة ' + sura.name;
   const sub = mode === 'review' ? 'سورة ' + sura.name + ' · آية ' + a + ' · باقي ' + remaining : 'آية ' + a + ' من ' + sura.ayat.length;
@@ -540,16 +587,26 @@ function screenPractice(params) {
     (stages.length > 1 ? '<div class="stagebar" id="stagebar">' + stages.map(() => '<i></i>').join('') + '</div>' : '') +
     '<div class="frame"><div class="frame-in q" id="ayah"></div></div>' +
     '<div class="steps" id="steps"></div><p class="status-line" id="statusLine"></p>' +
-    '<div class="ctrls" id="ctrls"></div><div id="extra"></div><div id="result"></div></main>';
+    '<div class="ctrls" id="ctrls"></div><div id="extra"></div><div id="result"></div>' +
+    '<details class="tafsir"><summary>' + icon('book', 16) + ' التفسير الميسر</summary><p id="tafsirText">جاري التحميل…</p></details></main>';
   $('#opt').onclick = () => go('settings');
+  getTafsir().then((tf) => {
+    const el = $('#tafsirText');
+    if (!el || !alive()) return;
+    const txt = tf && tf[s - 1] && tf[s - 1][a - 1];
+    el.textContent = txt || 'التفسير مش متاح في النسخة دي';
+  });
 
   const stage = () => stages[si];
-  const unit = () => (stages.length > 1 && stage().kind !== 'review' && !(stage().from === 0 && stage().to === tokens.length - 1) ? 'المقطع' : 'الآية');
+  const isWhole = () => stage().from === 0 && stage().to === tokens.length - 1;
+  const unit = () => (isWhole() ? 'الآية' : 'المقطع');
   const listenTimes = () => (stage().kind === 'learn' ? times : Math.max(1, Math.ceil(times / 2)));
   const refIdx = () => { const r = []; for (let i = stage().from; i <= stage().to; i++) if (tokens[i].c) r.push(i); return r; };
   const setStatus = (t) => { const el = $('#statusLine'); if (el) el.textContent = t; };
-  const setLbl = (t) => { const el = $('#mainLbl'); if (el) el.textContent = t; };
+  const setPlayLbl = (t) => { const el = $('#playLbl'); if (el) el.textContent = t; };
+  const setMicLbl = (t) => { const el = $('#micLbl'); if (el) el.textContent = t; };
   const drawAyah = () => { $('#ayah').innerHTML = renderAyah(tokens, { from: stage().from, to: stage().to, hidden: step === 'memory', statuses, a }); };
+  const keepHints = () => { const k = {}; Object.keys(statuses).forEach((i) => { if (statuses[i] === 'hint') k[i] = 'hint'; }); return k; };
 
   function highlight(i) {
     $$('#ayah .w.cur').forEach((x) => x.classList.remove('cur'));
@@ -571,20 +628,22 @@ function screenPractice(params) {
   }
 
   function defaultStatus() {
-    if (step === 'listen') return 'استمع لـ' + unit() + ' ' + ayatTimes(listenTimes()) + ' وركّز في الكلمات';
-    if (step === 'read') return 'اقرأ ' + unit() + ' وانت شايف الكلمات';
-    return 'اقرأ من الذاكرة، والكلمة هتظهر لما تقولها';
+    if (step === 'listen') return 'استمع لـ' + unit() + ' ' + ayatTimes(listenTimes()) + '، أو دوس سمّع لو جاهز';
+    if (step === 'read') return 'دوس سمّع واقرأ ' + unit() + ' وانت شايف الكلمات';
+    return 'دوس سمّع واقرأ من الذاكرة، والكلمة هتظهر لما تقولها';
   }
 
   function drawControls() {
-    const isListen = step === 'listen';
     const left = mode === 'review' ? ctl('aux', 'volume', 'اسمع', false) : ctl('prevA', 'chevronRight', 'السابقة', a === 1);
     const right = mode === 'review' ? ctl('nextA', 'arrowLeft', finished ? 'التالي' : 'تخطي', false) : ctl('nextA', 'chevronLeft', last ? 'إنهاء' : 'التالية', false);
-    const center = '<div class="cbtn"><button class="circle ' + (isListen ? 'play' : 'mic') + '" id="main" aria-label="' + (isListen ? 'استمع' : 'سمّع') + '">' + icon(isListen ? 'play' : 'mic', 30) +
-      '</button><small id="mainLbl">' + (isListen ? 'استمع ×' + listenTimes() : step === 'read' ? 'اقرأ' : 'سمّع') + '</small></div>';
-    $('#ctrls').innerHTML = left + center + right;
+    const playBtn = mode === 'review' ? '' : '<div class="cbtn"><button class="circle play" id="play" aria-label="استمع">' + icon('play', 28) +
+      '</button><small id="playLbl">' + (step === 'listen' ? 'استمع ×' + listenTimes() : 'استمع') + '</small></div>';
+    const micBtn = '<div class="cbtn"><button class="circle mic" id="mic" aria-label="سمّع">' + icon('mic', 28) + '</button><small id="micLbl">سمّع</small></div>';
+    $('#ctrls').innerHTML = left + playBtn + micBtn + right;
     $('#extra').innerHTML = step === 'memory' ? '<button class="hint-btn" id="hint">' + icon('bulb', 16) + 'كلمة مساعدة</button>' : '';
-    $('#main').onclick = isListen ? onListen : onMic;
+    const pl = $('#play');
+    if (pl) pl.onclick = onListen;
+    $('#mic').onclick = onMic;
     const prev = $('#prevA');
     if (prev) prev.onclick = () => go('practice', { s, a: a - 1, mode }, true);
     $('#nextA').onclick = onNext;
@@ -606,22 +665,15 @@ function screenPractice(params) {
   }
 
   function onNext() {
-    if (recording) cancelAndReset();
+    if (recording) { cancelRecording(); recording = false; recToken++; }
     if (mode === 'review') { if (!finished) skipped.add(key(s, a)); go('review', {}, true); return; }
     if (!last) go('practice', { s, a: a + 1, mode }, true);
-    else { toast('ما شاء الله، خلّصت سورة ' + sura.name); history.back(); }
-  }
-
-  function cancelAndReset() {
-    cancelRecording();
-    recording = false;
-    recToken++;
+    else { toast('ما شاء الله، خلّصت سورة ' + sura.name); goBack(); }
   }
 
   async function onAux() {
     if (recording || busy) return;
-    const clip = await clipFor(s, a, tokens, 0, tokens.length - 1);
-    await playRepeat(s, a, clip, 1, highlight, () => {});
+    await playRepeat(s, a, clipFor(row, tokens, 0, tokens.length - 1), 1, highlight, () => {});
     highlight(-1);
   }
 
@@ -633,27 +685,28 @@ function screenPractice(params) {
   }
 
   async function onListen() {
-    const btn = $('#main');
+    if (recording || busy) return;
+    const btn = $('#play');
     if (playing) { stopAudio(); return; }
     playing = true;
+    const wasListen = step === 'listen';
+    const n = wasListen ? listenTimes() : 1;
     btn.classList.add('playing');
-    btn.innerHTML = icon('pause', 30);
+    btn.innerHTML = icon('pause', 28);
     const stg = stage();
-    const n = listenTimes();
-    const clip = await clipFor(s, a, tokens, stg.from, stg.to);
-    const ok = await playRepeat(s, a, clip, n, highlight, (k) => setLbl('مرة ' + k + ' من ' + n));
+    const ok = await playRepeat(s, a, clipFor(row, tokens, stg.from, stg.to), n, highlight, (k) => setPlayLbl(n > 1 ? 'مرة ' + k + ' من ' + n : 'بيشتغل…'));
     playing = false;
     if (!btn.isConnected) return;
     highlight(-1);
     btn.classList.remove('playing');
-    btn.innerHTML = icon('play', 30);
-    setLbl('استمع ×' + n);
-    if (ok) {
+    btn.innerHTML = icon('play', 28);
+    setPlayLbl(step === 'listen' ? 'استمع ×' + listenTimes() : 'استمع');
+    if (ok && wasListen && step === 'listen') {
       const steps = stepsOf(stage());
       const nx = steps[steps.indexOf('listen') + 1];
       if (nx) {
-        setStatus(nx === 'read' ? 'دلوقتي اقرأ ' + unit() : 'دلوقتي سمّعه من الذاكرة');
-        setTimeout(() => { if (alive() && step === 'listen' && !playing) setStep(nx); }, 700);
+        setStatus(nx === 'read' ? 'دلوقتي دوس سمّع واقرأ ' + unit() : 'دلوقتي دوس سمّع وسمّعه من الذاكرة');
+        setTimeout(() => { if (alive() && step === 'listen' && !playing && !recording) setStep(nx); }, 700);
       }
     }
   }
@@ -664,17 +717,25 @@ function screenPractice(params) {
     try { await ensureModel(); } catch (e) { if (!e.cancel) showError(e); return; }
     if (!alive()) return;
     stopAudio();
+    if (step === 'listen') {
+      const steps = stepsOf(stage());
+      step = steps[steps.indexOf('listen') + 1] || 'memory';
+      statuses = {};
+      finished = false;
+      $('#result').innerHTML = '';
+      drawAll();
+    }
     try { await startRecording(); } catch (e) { toast('محتاجين إذن المايك عشان نسمع التلاوة'); return; }
     if (!alive()) { cancelRecording(); return; }
     recording = true;
-    statuses = {};
+    statuses = keepHints();
     finished = false;
     $('#result').innerHTML = '';
     drawAyah();
-    const btn = $('#main');
+    const btn = $('#mic');
     btn.classList.add('on');
-    btn.innerHTML = icon('stop', 28);
-    setLbl('خلصت');
+    btn.innerHTML = icon('stop', 26);
+    setMicLbl('خلصت');
     setStatus(step === 'read' ? 'اقرأ دلوقتي، والكلمات هتنوّر وانت بتقرأ' : 'سمّع دلوقتي، والكلمة هتظهر لما تقولها');
     live(++recToken);
   }
@@ -709,9 +770,9 @@ function screenPractice(params) {
     recording = false;
     recToken++;
     busy = true;
-    const btn = $('#main');
-    if (btn) { btn.classList.remove('on'); btn.innerHTML = icon('mic', 30); btn.disabled = true; }
-    setLbl('بنراجع…');
+    const btn = $('#mic');
+    if (btn) { btn.classList.remove('on'); btn.innerHTML = icon('mic', 28); btn.disabled = true; }
+    setMicLbl('بنراجع…');
     let heard = '';
     let ok = true;
     try {
@@ -737,9 +798,9 @@ function screenPractice(params) {
     }
     busy = false;
     if (!alive()) return;
-    const b = $('#main');
+    const b = $('#mic');
     if (b) b.disabled = false;
-    setLbl(step === 'read' ? 'اقرأ تاني' : 'سمّع تاني');
+    setMicLbl('سمّع تاني');
     if (ok) evaluate(heard);
   }
 
@@ -800,7 +861,6 @@ function screenPractice(params) {
     step = 'done';
     statuses = {};
     tokens.forEach((t, i) => { if (t.c) statuses[i] = 'ok'; });
-    si = stages.length - 1;
     $('#ayah').innerHTML = renderAyah(tokens, { from: 0, to: tokens.length - 1, hidden: false, statuses, a });
     const bar = $('#stagebar');
     if (bar) Array.from(bar.children).forEach((x) => { x.className = 'd'; });
@@ -957,8 +1017,8 @@ function gameArrange(sura, s, a, ws, chain) {
   }
   $('#hint').onclick = async () => {
     const tokens = ayahTokens(s, a);
-    const clip = await clipFor(s, a, tokens, 0, tokens.length - 1);
-    playRepeat(s, a, clip, 1, () => {}, () => {});
+    const T = await getTimings(reciterId(profile()));
+    playRepeat(s, a, clipFor(T && T[s + ':' + a], tokens, 0, tokens.length - 1), 1, () => {}, () => {});
   };
 }
 
@@ -996,7 +1056,7 @@ function gameComplete(sura, s, a, ws, chain) {
       $('#result').innerHTML = '<div class="result ' + (right ? 'pass' : 'fail') + '"><b>' + (right ? 'إجابة صح' : 'الإجابة الصح باللون الأخضر') + '</b>' +
         (chain ? '<button class="primary" id="nx">' + (lastAyah ? 'خلّصت السورة' : 'احفظ الآية التالية') + '</button>' : '<button class="primary" id="again">سؤال تاني</button>') + '</div>';
       const nx = $('#nx');
-      if (nx) nx.onclick = () => { if (lastAyah) { toast('ما شاء الله، خلّصت سورة ' + sura.name); history.back(); } else go('practice', { s, a: a + 1 }, true); };
+      if (nx) nx.onclick = () => { if (lastAyah) { toast('ما شاء الله، خلّصت سورة ' + sura.name); goBack(); } else go('practice', { s, a: a + 1 }, true); };
       const again = $('#again');
       if (again) again.onclick = () => go('game', { s, kind: 'complete' }, true);
     };
@@ -1091,7 +1151,7 @@ function screenSettings() {
 }
 
 function go(screen, params = {}, replace = false) {
-  const state = { screen, params };
+  const state = { screen, params, depth: replace ? curDepth() : curDepth() + 1 };
   if (replace) history.replaceState(state, '');
   else history.pushState(state, '');
   render(state);
@@ -1126,11 +1186,15 @@ function render(state) {
 
 async function init() {
   app.addEventListener('click', (e) => {
-    if (e.target.closest('[data-back]')) { history.back(); return; }
+    if (e.target.closest('[data-back]')) { goBack(); return; }
     const t = e.target.closest('[data-tab]');
     if (t) tab(t.dataset.tab);
   });
   window.addEventListener('popstate', (e) => render(e.state));
+  const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if (CapApp && CapApp.addListener) {
+    try { CapApp.addListener('backButton', () => goBack()); } catch (e) { /* ignore */ }
+  }
   try {
     const r = await fetch('data/quran.json');
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1139,7 +1203,8 @@ async function init() {
     app.innerHTML = '<div class="wrap center"><p>تعذر تحميل بيانات القرآن.</p></div>';
     return;
   }
-  const state = history.state && history.state.screen ? history.state : { screen: profile() ? 'home' : 'profiles', params: {} };
+  const prev = history.state && history.state.screen ? history.state : null;
+  const state = prev ? Object.assign({ depth: 0 }, prev) : { screen: profile() ? 'home' : 'profiles', params: {}, depth: 0 };
   history.replaceState(state, '');
   render(state);
 }

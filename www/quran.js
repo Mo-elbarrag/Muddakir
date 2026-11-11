@@ -14,6 +14,9 @@ export const LEGEND = [
   ['tj-silent', 'لا يُنطق']
 ];
 
+const PARTICLES = new Set(['لا', 'ما', 'من', 'في', 'علي', 'الي', 'عن', 'ان', 'لم', 'لن', 'قد', 'ثم', 'او', 'يا', 'الذي', 'الذين', 'التي', 'بل', 'اذا', 'لو', 'كل', 'اذ', 'لكن', 'حتي', 'ام', 'هل', 'كما', 'مما', 'الا', 'لما', 'ولا', 'وما', 'ومن', 'وفي', 'فلا', 'فما', 'وان', 'فان', 'لقد', 'ولقد', 'انما', 'بما', 'بان', 'لان', 'كان', 'وكان', 'يوم', 'عند', 'بين', 'قل', 'قال', 'قالوا', 'وقال', 'فقال', 'وهو', 'وهم', 'الذين', 'والذين']);
+const COMPLEMENTS = new Set(['لنا', 'له', 'لهم', 'لكم', 'لك', 'لي', 'لها', 'به', 'بها', 'بهم', 'بكم', 'فيه', 'فيها', 'فيهم', 'عليه', 'عليها', 'عليهم', 'عليكم', 'علينا', 'منه', 'منها', 'منهم', 'منكم', 'عنه', 'عنهم', 'اليه', 'اليهم', 'اليكم', 'الينا', 'معه', 'معهم', 'معكم']);
+
 const escT = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function normalize(s) {
@@ -33,57 +36,84 @@ export function normalize(s) {
     .trim();
 }
 
-function parseToken(raw) {
-  let html = '';
-  let plain = '';
+export function parseAyah(text) {
+  const src = String(text).replace(/\uFEFF/g, '');
+  const segs = [];
+  const re = /\[([a-z])(?::\d+)?\[([^\]]*)\]/g;
   let last = 0;
   let m;
-  const re = /\[([a-z])(?::\d+)?\[([^\]]*)\]/g;
-  while ((m = re.exec(raw))) {
-    const before = raw.slice(last, m.index).replace(/[\[\]]/g, '');
-    html += escT(before);
-    plain += before;
-    const cls = TJ[m[1]];
-    html += cls ? '<span class="' + cls + '">' + escT(m[2]) + '</span>' : escT(m[2]);
-    plain += m[2];
+  while ((m = re.exec(src))) {
+    if (m.index > last) segs.push({ t: src.slice(last, m.index), cls: '' });
+    segs.push({ t: m[2], cls: TJ[m[1]] || '' });
     last = re.lastIndex;
   }
-  const rest = raw.slice(last).replace(/[\[\]]/g, '');
-  html += escT(rest);
-  plain += rest;
-  return { html, plain };
-}
-
-export function parseAyah(text) {
-  return String(text).split(' ').filter(Boolean).map((raw) => {
-    const t = parseToken(raw);
-    return { html: t.html, plain: t.plain, c: normalize(t.plain) };
-  });
-}
-
-export function splitChunks(tokens) {
-  const total = tokens.filter((t) => t.c).length;
-  if (total <= 7) return [[0, tokens.length - 1]];
-  const chunks = [];
-  let start = 0;
-  let count = 0;
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t.c) count++;
-    const nextMark = i + 1 < tokens.length && !tokens[i + 1].c;
-    if ((!t.c && count >= 3) || (t.c && count >= 7 && !nextMark)) {
-      chunks.push([start, i, count]);
-      start = i + 1;
-      count = 0;
+  if (last < src.length) segs.push({ t: src.slice(last), cls: '' });
+  const tokens = [];
+  let cur = { html: '', plain: '' };
+  const flush = () => {
+    if (cur.plain) tokens.push({ html: cur.html, plain: cur.plain, c: normalize(cur.plain) });
+    cur = { html: '', plain: '' };
+  };
+  for (const sg of segs) {
+    const clean = sg.t.replace(/\[[a-z](?::\d+)?\[/g, '').replace(/[\[\]]/g, '');
+    for (const part of clean.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) { flush(); continue; }
+      cur.plain += part;
+      cur.html += sg.cls ? '<span class="' + sg.cls + '">' + escT(part) + '</span>' : escT(part);
     }
   }
-  if (start < tokens.length) chunks.push([start, tokens.length - 1, count]);
-  if (chunks.length > 1 && chunks[chunks.length - 1][2] < 3) {
-    const tail = chunks.pop();
-    chunks[chunks.length - 1][1] = tail[1];
-    chunks[chunks.length - 1][2] += tail[2];
+  flush();
+  return tokens;
+}
+
+export function splitChunks(tokens, pauses) {
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  const W = words.length;
+  if (W <= 5) return [[0, tokens.length - 1]];
+  const cutScore = (k) => {
+    const ti = words[k];
+    const tn = words[k + 1];
+    let s = 0;
+    if (tn - ti > 1) s += 10;
+    const ps = pauses ? pauses[ti] : null;
+    if (ps !== null && ps !== undefined) {
+      if (ps >= 400) s += 8;
+      else if (ps >= 250) s += 5;
+      else if (ps >= 150) s += 2;
+    }
+    if (PARTICLES.has(tokens[ti].c)) s -= 12;
+    if (COMPLEMENTS.has(tokens[tn].c)) s -= 6;
+    const f = tokens[tn].c.charAt(0);
+    if (f === 'و' || f === 'ف') s += 1;
+    return s;
+  };
+  const sizeCost = (len) => {
+    if (len < 2) return 60;
+    if (len > 8) return 60 + (len - 8) * 10;
+    if (len >= 4 && len <= 6) return 0;
+    if (len === 3 || len === 7) return 1;
+    return 2.5;
+  };
+  const best = new Array(W + 1).fill(Infinity);
+  const prev = new Array(W + 1).fill(-1);
+  best[0] = 0;
+  for (let i = 1; i <= W; i++) {
+    for (let j = Math.max(0, i - 12); j < i; j++) {
+      if (best[j] === Infinity) continue;
+      const c = best[j] + sizeCost(i - j) - (i < W ? cutScore(i - 1) : 0);
+      if (c < best[i]) { best[i] = c; prev[i] = j; }
+    }
   }
-  return chunks.map((c) => [c[0], c[1]]);
+  const bounds = [];
+  let i = W;
+  while (i > 0) {
+    const j = prev[i];
+    bounds.unshift([j, i]);
+    i = j;
+  }
+  return bounds.map(([j, e]) => [j === 0 ? 0 : words[j], e === W ? tokens.length - 1 : words[e] - 1]);
 }
 
 export function buildStages(chunks) {

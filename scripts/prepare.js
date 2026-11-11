@@ -26,7 +26,7 @@ async function fetchRetry(url, opts = {}, tries = 4) {
   throw last;
 }
 
-const plainOf = (t) => t.replace(/\[[a-z](?::\d+)?\[([^\]]*)\]/g, '$1').replace(/[\[\]]/g, '');
+const plainOf = (t) => t.replace(/\[[a-z](?::\d+)?\[/g, '').replace(/[\[\]]/g, '');
 const keyNorm = (s) => s.replace(/\uFEFF/g, '').replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, '').replace(/[إأآٱ]/g, 'ا').replace(/\s+/g, ' ').trim();
 
 async function buildQuran() {
@@ -34,13 +34,13 @@ async function buildQuran() {
   const json = await res.json();
   const surahs = json && json.data && json.data.surahs;
   if (!Array.isArray(surahs) || surahs.length !== 114) throw new Error('unexpected quran data');
-  const basmala = keyNorm(surahs[0].ayahs[0].text.replace(/\uFEFF/g, '').trim().split(/\s+/).map(plainOf).join(' '));
+  const basmala = keyNorm(plainOf(surahs[0].ayahs[0].text.replace(/\uFEFF/g, '').trim()));
   let total = 0;
   const data = surahs.map((s) => {
     const ayat = s.ayahs.map((a) => {
       let tokens = a.text.replace(/\uFEFF/g, '').trim().split(/\s+/);
       if (s.number !== 1 && s.number !== 9 && a.numberInSurah === 1 && tokens.length > 4 &&
-        keyNorm(tokens.slice(0, 4).map(plainOf).join(' ')) === basmala) tokens = tokens.slice(4);
+        keyNorm(plainOf(tokens.slice(0, 4).join(' '))) === basmala) tokens = tokens.slice(4);
       return tokens.join(' ');
     });
     total += ayat.length;
@@ -50,6 +50,16 @@ async function buildQuran() {
   if (total !== 6236) throw new Error('unexpected ayah count ' + total);
   fs.writeFileSync(path.join(DATA, 'quran.json'), JSON.stringify(data));
   console.log('quran.json ready');
+}
+
+async function buildTafsir() {
+  const res = await fetchRetry('https://api.alquran.cloud/v1/quran/ar.muyassar');
+  const json = await res.json();
+  const surahs = json && json.data && json.data.surahs;
+  if (!Array.isArray(surahs) || surahs.length !== 114) throw new Error('unexpected tafsir data');
+  const data = surahs.map((s) => s.ayahs.map((a) => String(a.text || '').trim()));
+  fs.writeFileSync(path.join(DATA, 'tafsir.json'), JSON.stringify(data));
+  console.log('tafsir.json ready');
 }
 
 function walk(dir, out = []) {
@@ -70,18 +80,20 @@ function convert(entry) {
   }
   if (!n) return null;
   const st = new Array(n).fill(null);
-  let end = 0;
+  const en = new Array(n).fill(null);
   for (const g of segs) {
     if (!Array.isArray(g) || g.length < 4) continue;
     const [a, b, s, e] = g;
     const last = b > a ? b - 1 : a;
     for (let w = a; w <= last && w < n; w++) {
-      if (w >= 0 && (st[w] === null || s < st[w])) st[w] = s;
+      if (w < 0) continue;
+      if (st[w] === null || s < st[w]) st[w] = s;
+      if (en[w] === null || e > en[w]) en[w] = e;
     }
-    if (e > end) end = e;
   }
   for (let w = 0; w < n; w++) if (st[w] === null) st[w] = w > 0 ? st[w - 1] : 0;
-  return [n].concat(st.map((x) => Math.round(x)), [Math.round(end)]);
+  for (let w = 0; w < n; w++) if (en[w] === null) en[w] = w + 1 < n ? st[w + 1] : st[w] + 500;
+  return [n].concat(st.map((x) => Math.round(x)), en.map((x) => Math.round(x)));
 }
 
 async function buildTimings() {
@@ -145,6 +157,7 @@ async function buildFont() {
 (async () => {
   fs.mkdirSync(DATA, { recursive: true });
   await buildQuran();
+  try { await buildTafsir(); } catch (e) { console.warn('WARNING: tafsir skipped: ' + e.message); }
   try { await buildTimings(); } catch (e) { console.warn('WARNING: word timings skipped: ' + e.message); }
   await buildFont();
   fs.rmSync(TMP, { recursive: true, force: true });

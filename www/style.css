@@ -162,3 +162,10 @@ details{margin-top:8px;font-size:13px;color:var(--muted)}
 .modal-box{background:var(--card);border-radius:16px;padding:20px;width:min(340px,90%);text-align:center}
 .pbar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:12px}
 .pbar i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s}
+.ctrls{gap:16px}
+.cbtn{min-width:52px}
+.circle.mic,.circle.play{width:66px;height:66px}
+.tafsir{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;color:var(--text);font-size:14px}
+.tafsir summary{cursor:pointer;font-weight:600;color:var(--gold);display:flex;align-items:center;gap:6px;list-style:none}
+.tafsir summary::-webkit-details-marker{display:none}
+.tafsir p{margin:10px 0 0;line-height:1.9;color:var(--text)}
