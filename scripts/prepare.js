@@ -165,10 +165,10 @@ async function buildFonts() {
 async function buildModel() {
   const dir = path.join(ROOT, 'www', 'models');
   fs.mkdirSync(dir, { recursive: true });
-  const res = await fetchRetry('https://huggingface.co/Hisnlabs/tajweed-v2/resolve/main/onnx/model-int8.onnx');
+  const res = await fetchRetry('https://huggingface.co/Hisnlabs/tajweed-v2/resolve/main/onnx/model-fp32.onnx');
   const b = Buffer.from(await res.arrayBuffer());
   if (b.length < 5000000) throw new Error('model file too small: ' + b.length);
-  fs.writeFileSync(path.join(dir, 'tajweed-int8.onnx'), b);
+  fs.writeFileSync(path.join(dir, 'tajweed-fp32.onnx'), b);
   console.log('model ready: ' + (b.length / 1e6).toFixed(1) + ' MB');
 }
 

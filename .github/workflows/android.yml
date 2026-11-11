@@ -23,6 +23,10 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Fixed signing key
         run: |
           if [ ! -f keystore/debug.keystore ]; then
@@ -41,6 +45,12 @@ jobs:
         run: node scripts/prepare.js
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Quantize model for mobile
+        run: |
+          pip install onnxruntime==1.20.1 onnx
+          python scripts/quantize.py
+          ls -la www/models
 
       - run: npx cap add android
       - run: node scripts/android-setup.js
