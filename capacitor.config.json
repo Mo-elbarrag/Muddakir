@@ -1,0 +1,8 @@
+{
+  "appId": "com.moelbarrag.muddakir",
+  "appName": "مُدَّكِر",
+  "webDir": "www",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
