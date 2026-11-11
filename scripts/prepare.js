@@ -185,9 +185,59 @@ function copyOrt() {
   console.log('ort ready: ' + want.join(', '));
 }
 
+function buildSimilar() {
+  const data = JSON.parse(fs.readFileSync(path.join(DATA, 'quran.json'), 'utf8'));
+  const norm = (t) => keyNorm(plainOf(t)).replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+  const ayat = [];
+  data.forEach((su) => su.ayat.forEach((text, i) => {
+    const w = text.split(/\s+/).map(norm).filter((x) => /[\u0621-\u064A]/.test(x));
+    ayat.push({ s: su.n, a: i + 1, w });
+  }));
+  const N = 3;
+  const idx = new Map();
+  ayat.forEach((x, k) => {
+    const seen = new Set();
+    for (let i = 0; i + N <= x.w.length; i++) {
+      const g = x.w.slice(i, i + N).join(' ');
+      if (seen.has(g)) continue;
+      seen.add(g);
+      let l = idx.get(g);
+      if (!l) { l = []; idx.set(g, l); }
+      l.push(k);
+    }
+  });
+  const out = {};
+  ayat.forEach((x, k) => {
+    if (x.w.length < 3) return;
+    const cnt = new Map();
+    const seen = new Set();
+    for (let i = 0; i + N <= x.w.length; i++) {
+      const g = x.w.slice(i, i + N).join(' ');
+      if (seen.has(g)) continue;
+      seen.add(g);
+      const l = idx.get(g);
+      if (!l || l.length > 30) continue;
+      for (const o of l) { if (o !== k) cnt.set(o, (cnt.get(o) || 0) + 1); }
+    }
+    const grams = Math.max(1, x.w.length - N + 1);
+    const res = [];
+    cnt.forEach((c, o) => {
+      const y = ayat[o];
+      if (y.s === x.s && Math.abs(y.a - x.a) <= 1) return;
+      const score = c / grams;
+      if (c >= Math.min(2, grams) && score >= 0.3) res.push([y.s, y.a, Math.round(score * 100)]);
+    });
+    res.sort((p, q) => q[2] - p[2]);
+    if (res.length) out[x.s + ':' + x.a] = res.slice(0, 4);
+  });
+  fs.writeFileSync(path.join(DATA, 'similar.json'), JSON.stringify(out));
+  console.log('similar.json ready: ' + Object.keys(out).length + ' ayat');
+}
+
 (async () => {
   fs.mkdirSync(DATA, { recursive: true });
   await buildQuran();
+  try { buildSimilar(); } catch (e) { console.warn('WARNING: similar skipped: ' + e.message); }
   try { await buildTafsir(); } catch (e) { console.warn('WARNING: tafsir skipped: ' + e.message); }
   try { await buildTimings(); } catch (e) { console.warn('WARNING: word timings skipped: ' + e.message); }
   await buildFonts();

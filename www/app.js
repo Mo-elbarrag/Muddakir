@@ -22,7 +22,8 @@ const QUIZ = {
   tf: { title: 'صح ولا غلط؟', icon: 'check', desc: 'الآية مكتوبة صح؟' },
   nextAyah: { title: 'إيه الآية الجاية؟', icon: 'arrowLeft', desc: 'اختار الآية اللي بعدها' },
   order: { title: 'رتّب الآيات', icon: 'list', desc: 'رتّب الآيات بالترتيب الصح' },
-  connect: { title: 'وصّل', icon: 'link', desc: 'وصّل بداية كل آية بنهايتها' }
+  connect: { title: 'وصّل', icon: 'link', desc: 'وصّل بداية كل آية بنهايتها' },
+  similar: { title: 'المتشابهات', icon: 'search', desc: 'فرّق بين الآيات اللي بدايتها واحدة' }
 };
 const MILESTONES = [
   { id: 'ayah1', title: 'أول آية', desc: 'بداية الطريق', test: (s) => s.mem >= 1 },
@@ -987,16 +988,29 @@ function buildPractice(params, T, rid, cuts) {
 
   app.innerHTML = '<header class="top"><button class="ibtn" data-back aria-label="رجوع">' + icon('arrowRight') + '</button>' +
     '<div class="ttl center"><b class="qf">' + esc(title) + '</b><small id="sub"></small></div>' + brandMark(28) + '</header>' +
-    '<main class="wrap">' + (stages.length > 1 ? '<div class="stagebar" id="stagebar">' + stages.map(() => '<i></i>').join('') + '</div>' : '') +
+    '<main class="wrap">' + (stages.length > 1 ? '<div class="stagebar" id="stagebar">' + stages.map((x, k) => '<i data-si="' + k + '"></i>').join('') + '</div>' : '') +
     '<div class="frame"><div class="frame-in q" id="ayah"></div></div>' +
-    '<div class="steps" id="steps"></div><p class="status-line" id="statusLine"></p>' +
+    '<div class="steps" id="steps"></div><div class="stage-nav" id="stageNav"></div><p class="status-line" id="statusLine"></p>' +
     '<div class="ctrls" id="ctrls"></div><div id="result"></div>' +
-    '<details class="tafsir"><summary>' + icon('book', 16) + ' التفسير الميسر</summary><p id="tafsirText">جاري التحميل…</p></details></main>';
+    '<details class="tafsir"><summary>' + icon('book', 16) + ' التفسير الميسر</summary><p id="tafsirText">جاري التحميل…</p></details>' +
+    '<details class="tafsir" id="simBox" hidden><summary>' + icon('link', 16) + ' آيات متشابهة</summary><div id="simText"></div></details></main>';
   getTafsir().then((tf) => {
     const el = $('#tafsirText');
     if (!el || !alive()) return;
     const txt = tf && tf[s - 1] && tf[s - 1][a - 1];
     el.textContent = txt || 'التفسير مش متاح في النسخة دي';
+  });
+
+  getSimilar().then((sd) => {
+    const box = $('#simBox');
+    if (!box || !alive()) return;
+    const l = (sd && sd[s + ':' + a]) || [];
+    if (!l.length) return;
+    box.hidden = false;
+    $('#simText').innerHTML = '<p class="muted small">آيات قريبة في ألفاظها، انتبه للفرق بينها:</p>' + l.map(([s2, a2]) => {
+      const ws = wordsOf(s2, a2);
+      return '<div class="sim-row"><b class="qf">' + esc(QURAN[s2 - 1].name) + ' · ' + arDigits(a2) + '</b><p class="q sim-q">' + ws.slice(0, 14).map((w) => w.html).join(' ') + (ws.length > 14 ? ' …' : '') + '</p></div>';
+    }).join('');
   });
 
   const stage = () => stages[si];
@@ -1028,6 +1042,13 @@ function buildPractice(params, T, rid, cuts) {
     const idx = steps.indexOf(step);
     $('#steps').innerHTML = steps.length > 1 ? steps.map((x, i) => '<button data-step="' + x + '" class="' + (i === idx ? 'on' : i < idx ? 'ok' : '') + '">' + STEP_LABEL[x] + (i < idx ? ' ✓' : '') + '</button>').join('') : '';
     $$('#steps button').forEach((b) => { b.onclick = () => { if (busy) return; setStep(b.dataset.step, true); }; });
+    const sn = $('#stageNav');
+    if (sn) {
+      sn.innerHTML = stages.length > 1 ? '<button id="stPrev"' + (si === 0 ? ' disabled' : '') + '>' + icon('chevronRight', 16) + ' المرحلة السابقة</button><button id="stNext"' + (si === stages.length - 1 ? ' disabled' : '') + '>المرحلة التالية ' + icon('chevronLeft', 16) + '</button>' : '';
+      const sp = $('#stPrev'); if (sp) sp.onclick = () => goStage(si - 1);
+      const sx = $('#stNext'); if (sx) sx.onclick = () => goStage(si + 1);
+    }
+    $$('#stagebar i').forEach((x) => { x.onclick = () => goStage(+x.dataset.si); });
   }
 
   function defaultStatus() {
@@ -1043,7 +1064,7 @@ function buildPractice(params, T, rid, cuts) {
     if (mode === 'review') html += btn('aux', 'volume', 'استمع');
     else html += btn('prevA', 'chevronRight', 'السابقة', '', a === 1) + btn('play', 'play', 'استمع', 'play');
     html += btn('mic', listening ? 'pause' : 'mic', listening ? 'بسمعك' : 'سمّع', 'mic' + (listening ? ' listening' : ''));
-    if (step === 'memory') html += btn('hint', 'bulb', 'مساعدة', 'hint');
+    if (step === 'memory' || step === 'read') html += btn('hint', 'bulb', 'مساعدة', 'hint');
     html += mode === 'review' ? btn('nextA', 'chevronLeft', finished ? 'التالي' : 'تخطي') : btn('nextA', 'chevronLeft', last ? 'إنهاء' : 'التالية');
     $('#ctrls').innerHTML = html;
     const pl = $('#play'); if (pl) pl.onclick = onListen;
@@ -1060,6 +1081,16 @@ function buildPractice(params, T, rid, cuts) {
     wrap.classList.toggle('listening', listening);
     $('#mic').innerHTML = icon(listening ? 'pause' : 'mic', 19);
     $('#micLbl').textContent = listening ? 'بسمعك' : 'سمّع';
+  }
+
+  function goStage(k) {
+    if (busy || k < 0 || k >= stages.length) return;
+    stopListen(false);
+    stopAudio();
+    si = k;
+    p.lastStage = { s, a, si };
+    save();
+    setStep(stepsOf(stage())[0]);
   }
 
   function drawAll() { drawMeta(); drawAyah(); drawControls(); setStatus(defaultStatus()); }
@@ -1092,11 +1123,39 @@ function buildPractice(params, T, rid, cuts) {
   }
 
   function onHint() {
-    const ti = refIdx().find((i) => !statuses[i] || statuses[i] === 'pending');
+    const ref = refIdx();
+    const ti = ref.find((i) => !statuses[i] || statuses[i] === 'pending');
     if (ti === undefined) return;
     statuses[ti] = 'hint';
     drawAyah();
+    if (ref.every((i) => statuses[i] && statuses[i] !== 'pending')) { stopListen(false); hintedEnd(); return; }
     checkComplete();
+  }
+
+  function hintedEnd() {
+    if (mode !== 'learn') { evaluate(); return; }
+    const ref = refIdx();
+    let pts = 0;
+    ref.forEach((ti) => { const x = statuses[ti]; pts += x === 'ok' ? 1 : x === 'near' ? 0.75 : x === 'hint' ? 0.5 : 0; });
+    const score = ref.length ? Math.round((pts * 100) / ref.length) : 0;
+    if (score >= passMark(p)) { evaluate(); return; }
+    const lastStage = si === stages.length - 1;
+    $('#result').innerHTML = resultCard(false, score, statuses, ref,
+      '<button class="primary" id="hintNext">' + (lastStage ? 'إنهاء الآية' : 'انتقل للمرحلة التالية') + '</button><button class="light-btn" id="hintRetry">حاول بدون مساعدة</button>');
+    setStatus('اكتملت المرحلة بالمساعدة، تقدر تكمّل أو تحاول تاني');
+    $('#hintRetry').onclick = () => { statuses = {}; $('#result').innerHTML = ''; drawAyah(); startListen(); };
+    $('#hintNext').onclick = () => {
+      if (!lastStage) {
+        goStage(si + 1);
+        const first = stepsOf(stage())[0];
+        if (first === 'listen') setTimeout(() => { if (alive() && step === 'listen') onListen(); }, 400);
+        else startListen();
+        return;
+      }
+      p.lastStage = null;
+      applyResult(s, a, score, false);
+      showComplete(score);
+    };
   }
 
   async function onListen() {
@@ -1507,6 +1566,7 @@ function quizAvailable(kind, pool, s) {
   if (!pool.length) return false;
   if (kind === 'nextAyah' || kind === 'order') return pool.some((a) => a < len && set.has(a + 1));
   if (kind === 'connect') return pool.filter((a) => wordsOf(s, a).length >= 2).length >= 3;
+  if (kind === 'similar') return similarPairs(pool, s).length > 0;
   return true;
 }
 
@@ -1561,7 +1621,7 @@ function screenQuiz(params) {
     lockedScreen(QUIZ[params.kind].title, 'احفظ آيات أكتر من السورة عشان النشاط ده يتفتح');
     return;
   }
-  const fn = { arrange: qArrange, complete: qComplete, nextWord: qNextWord, spot: qSpot, tf: qTF, nextAyah: qNextAyah, order: qOrder, connect: qConnect }[params.kind] || qArrange;
+  const fn = { arrange: qArrange, complete: qComplete, nextWord: qNextWord, spot: qSpot, tf: qTF, nextAyah: qNextAyah, order: qOrder, connect: qConnect, similar: qSimilar }[params.kind] || qArrange;
   fn(params, pool);
 }
 
@@ -1890,7 +1950,10 @@ function screenSurahActs(params) {
   };
   app.innerHTML = topBar('أنشطة سورة ' + sura.name, true) + '<main class="wrap"><p class="muted small">محفوظ ' + mem.length + ' من ' + sura.ayat.length + ' آية</p>' +
     Object.keys(QUIZ).map(card).join('') +
-    '<button class="row" id="reciteAll"><span class="act-ic">' + icon('mic', 22) + '</span><div class="grow"><b>سمّع السورة كاملة</b><small>من الذاكرة مرة واحدة من غير توقف</small></div>' + icon('chevronLeft', 18) + '</button></main>';
+    '<section class="card" style="margin-top:10px"><h2>التسميع من الذاكرة</h2><p class="muted small">اختار الآيات اللي هتسمّعها مرة واحدة من غير توقف.</p>' +
+    '<div class="seg"><label class="opt" style="flex:1;gap:6px">من <select id="actFrom" class="time">' + range(1, sura.ayat.length).map((x) => '<option value="' + x + '">' + arDigits(x) + '</option>').join('') + '</select></label>' +
+    '<label class="opt" style="flex:1;gap:6px">إلى <select id="actTo" class="time">' + range(1, sura.ayat.length).map((x) => '<option value="' + x + '">' + arDigits(x) + '</option>').join('') + '</select></label></div>' +
+    '<button class="primary" id="actRecite">ابدأ التسميع</button><button class="light-btn" id="reciteAll">سمّع السورة كاملة</button></section></main>';
   $$('[data-kind]').forEach((b) => {
     b.onclick = () => {
       if (b.dataset.locked) { toast('احفظ آيات أكتر من السورة عشان النشاط ده يتفتح'); return; }
@@ -1898,6 +1961,15 @@ function screenSurahActs(params) {
     };
   });
   $('#reciteAll').onclick = () => go('recite', { s, from: 1, to: sura.ayat.length, purpose: 'surah' });
+  const af = $('#actFrom');
+  const at = $('#actTo');
+  at.value = String(sura.ayat.length);
+  $('#actRecite').onclick = () => {
+    let fr = +af.value;
+    let to = +at.value;
+    if (to < fr) { const t = fr; fr = to; to = t; }
+    go('recite', { s, from: fr, to, purpose: 'surah' });
+  };
 }
 
 function screenSettings() {
@@ -2138,6 +2210,61 @@ function screenFamily() {
   }).join('') + '</main>';
 }
 
+let simData;
+async function getSimilar() {
+  if (simData !== undefined) return simData;
+  try {
+    const r = await fetch('data/similar.json');
+    simData = r.ok ? await r.json() : null;
+  } catch (e) {
+    simData = null;
+  }
+  return simData;
+}
+
+function commonPrefix(s1, a1, s2, a2) {
+  const x = wordsOf(s1, a1).map((w) => w.c);
+  const y = wordsOf(s2, a2).map((w) => w.c);
+  let k = 0;
+  while (k < x.length && k < y.length && x[k] === y[k]) k++;
+  return k;
+}
+
+function similarPairs(pool, s) {
+  const out = [];
+  if (!simData) return out;
+  pool.forEach((a) => {
+    const l = simData[s + ':' + a] || [];
+    l.forEach(([s2, a2]) => {
+      const k = commonPrefix(s, a, s2, a2);
+      if (k >= 2 && k < wordsOf(s, a).length && k < wordsOf(s2, a2).length) out.push({ a, s2, a2, k });
+    });
+  });
+  return out;
+}
+
+function qSimilar(params, pool) {
+  const s = params.s;
+  const pairs = similarPairs(pool, s);
+  const pr = pick(pairs);
+  const ws = wordsOf(s, pr.a);
+  const cont = (ss, aa, k) => { const w = wordsOf(ss, aa).slice(k, k + 4); return w.map((x) => x.plain).join(' ') + (wordsOf(ss, aa).length > k + 4 ? ' …' : ''); };
+  const options = [{ right: true, html: esc(cont(s, pr.a, pr.k)) }];
+  const seen = new Set([options[0].html]);
+  pairs.filter((x) => x.a === pr.a).forEach((x) => { const h = esc(cont(x.s2, x.a2, x.k)); if (!seen.has(h)) { seen.add(h); options.push({ right: false, html: h }); } });
+  while (options.length < 3) {
+    const rs = 1 + Math.floor(Math.random() * 114);
+    const ra = 1 + Math.floor(Math.random() * QURAN[rs - 1].ayat.length);
+    const h = esc(cont(rs, ra, Math.min(pr.k, Math.max(0, wordsOf(rs, ra).length - 1))));
+    if (h && !seen.has(h)) { seen.add(h); options.push({ right: false, html: h }); }
+  }
+  const body = '<p class="qtitle">كمّل الآية دي من سورة ' + esc(QURAN[s - 1].name) + ' (آية ' + arDigits(pr.a) + ')</p>' +
+    '<div class="frame"><div class="frame-in q answer" id="qframe">' + ws.slice(0, pr.k).map((w) => '<span class="w">' + w.html + '</span>').join(' ') + ' …</div></div>' +
+    '<p class="muted small center">البداية دي موجودة كمان في سورة ' + esc(QURAN[pr.s2 - 1].name) + '، فانتبه للتكملة</p>';
+  const reveal = ws.slice(0, pr.k + 4).map((w, i) => '<span class="w' + (i >= pr.k ? ' ok' : '') + '">' + (i >= pr.k ? esc(w.plain) : w.html) + '</span>').join(' ') + (ws.length > pr.k + 4 ? ' …' : '');
+  optionsQuiz(params, QUIZ.similar.title, body, shuffle(options), (o) => o.right, reveal, true);
+}
+
 function go(screen, params = {}, replace = false) {
   const state = { screen, params, depth: replace ? curDepth() : curDepth() + 1 };
   if (replace) history.replaceState(state, '');
@@ -2202,6 +2329,7 @@ async function init() {
     const r = await fetch('data/quran.json');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     QURAN = await r.json();
+    getSimilar();
   } catch (e) {
     app.innerHTML = '<div class="wrap center"><p>تعذر تحميل بيانات القرآن.</p></div>';
     return;
