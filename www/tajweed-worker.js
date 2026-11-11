@@ -7,7 +7,7 @@ const LEAD = 6400;
 const CAP = 16000 * 58;
 const BASE = self.location.href.replace(/[^/]*$/, '');
 
-let ort = null;
+let ortLib = null;
 let session = null;
 let initP = null;
 let queue = Promise.resolve();
@@ -135,10 +135,10 @@ async function init() {
   if (!initP) {
     initP = (async () => {
       try { importScripts(BASE + 'vendor/ort/ort.wasm.min.js'); } catch (e) { importScripts(BASE + 'vendor/ort/ort.min.js'); }
-      ort = self.ort;
-      ort.env.wasm.numThreads = 1;
-      ort.env.wasm.wasmPaths = BASE + 'vendor/ort/';
-      session = await ort.InferenceSession.create(BASE + 'models/tajweed-int8.onnx', { executionProviders: ['wasm'] });
+      ortLib = self.ort;
+      ortLib.env.wasm.numThreads = 1;
+      ortLib.env.wasm.wasmPaths = BASE + 'vendor/ort/';
+      session = await ortLib.InferenceSession.create(BASE + 'models/tajweed-int8.onnx', { executionProviders: ['wasm'] });
     })();
     initP.catch(() => { initP = null; });
   }
@@ -176,8 +176,8 @@ async function infer() {
     mel[i] = (v + 4) / 4;
   }
   const feeds = {
-    mel: new ort.Tensor('float32', mel, [1, N_MELS, n]),
-    riwaya: new ort.Tensor('int64', BigInt64Array.from([0n]), [1])
+    mel: new ortLib.Tensor('float32', mel, [1, N_MELS, n]),
+    riwaya: new ortLib.Tensor('int64', BigInt64Array.from([0n]), [1])
   };
   const out = await session.run(feeds);
   const lp = out.logprobs || out[Object.keys(out)[0]];
