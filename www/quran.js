@@ -1,7 +1,7 @@
 const TJ = {
   h: 'tj-silent', s: 'tj-silent', l: 'tj-silent', u: 'tj-silent', d: 'tj-silent', b: 'tj-silent',
   n: 'tj-madd2', p: 'tj-madd246', o: 'tj-madd45', m: 'tj-madd6', q: 'tj-qalqala',
-  c: 'tj-ghunna', f: 'tj-ghunna tj-f', w: 'tj-ghunna', i: 'tj-ghunna tj-i', a: 'tj-ghunna', g: 'tj-ghunna'
+  c: 'tj-ghunna', f: 'tj-ghunna', w: 'tj-ghunna', i: 'tj-ghunna', a: 'tj-ghunna', g: 'tj-ghunna'
 };
 
 export const LEGEND = [
@@ -76,19 +76,13 @@ function markBetween(tokens, ti, tn) {
   return false;
 }
 
-function dpSplit(tokens, words, pauses, a, b) {
+function dpSplit(tokens, words, a, b) {
   const W = b - a + 1;
   const cutScore = (k) => {
     const ti = words[k];
     const tn = words[k + 1];
     let s = 0;
     if (markBetween(tokens, ti, tn)) s += 10;
-    const ps = pauses ? pauses[ti] : null;
-    if (ps !== null && ps !== undefined) {
-      if (ps >= 400) s += 8;
-      else if (ps >= 250) s += 5;
-      else if (ps >= 150) s += 2;
-    }
     if (PARTICLES.has(tokens[ti].c)) s -= 12;
     if (COMPLEMENTS.has(tokens[tn].c)) s -= 6;
     const f = tokens[tn].c.charAt(0);
@@ -144,30 +138,40 @@ function mergeTiny(groups, min) {
   return groups;
 }
 
-export function splitChunks(tokens, pauses) {
+function toTokenRanges(tokens, words, groups) {
+  return groups.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === groups.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
+}
+
+export function chunksFromCuts(tokens, cuts) {
+  const words = [];
+  tokens.forEach((t, i) => { if (t.c) words.push(i); });
+  const W = words.length;
+  if (W <= 1) return [[0, tokens.length - 1]];
+  let groups = [];
+  let st = 0;
+  for (const k of cuts || []) {
+    if (k < st || k >= W - 1) continue;
+    groups.push([st, k]);
+    st = k + 1;
+  }
+  groups.push([st, W - 1]);
+  groups = mergeTiny(groups, 2);
+  const out = [];
+  for (const [a, b] of groups) {
+    if (b - a + 1 > 14) out.push(...dpSplit(tokens, words, a, b));
+    else out.push([a, b]);
+  }
+  return toTokenRanges(tokens, words, out);
+}
+
+export function splitChunks(tokens) {
   const words = [];
   tokens.forEach((t, i) => { if (t.c) words.push(i); });
   const W = words.length;
   if (W <= 4) return [[0, tokens.length - 1]];
   const cuts = [];
-  for (let k = 0; k + 1 < W; k++) {
-    const mark = markBetween(tokens, words[k], words[k + 1]);
-    const ps = pauses ? pauses[words[k]] : null;
-    const has = ps !== null && ps !== undefined;
-    if (mark && (!has || ps >= 150)) cuts.push(k);
-    else if (has && ps >= 450) cuts.push(k);
-  }
-  let groups = [];
-  let st = 0;
-  for (const k of cuts) { groups.push([st, k]); st = k + 1; }
-  groups.push([st, W - 1]);
-  groups = mergeTiny(groups, 2);
-  const out = [];
-  for (const [a, b] of groups) {
-    if (b - a + 1 > 12) out.push(...dpSplit(tokens, words, pauses, a, b));
-    else out.push([a, b]);
-  }
-  return out.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === out.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
+  for (let k = 0; k + 1 < W; k++) if (markBetween(tokens, words[k], words[k + 1])) cuts.push(k);
+  return chunksFromCuts(tokens, cuts);
 }
 
 export function meaningSegment(tokens) {
@@ -188,7 +192,7 @@ export function meaningSegment(tokens) {
   }
   const good = merged.filter((r) => { const n = countWords(tokens, r); return n >= 3 && n <= 12; });
   if (good.length) return good[Math.floor(Math.random() * good.length)];
-  const ch = splitChunks(tokens, null).filter((r) => countWords(tokens, r) >= 3);
+  const ch = splitChunks(tokens).filter((r) => countWords(tokens, r) >= 3);
   return ch.length ? ch[Math.floor(Math.random() * ch.length)] : [0, tokens.length - 1];
 }
 
@@ -204,26 +208,4 @@ export function buildStages(chunks) {
   });
   if (!cumulative) st.push({ from: first, to: lastTo, kind: 'full' });
   return st;
-}
-
-export function chunksFromCuts(tokens, cuts) {
-  const words = [];
-  tokens.forEach((t, i) => { if (t.c) words.push(i); });
-  const W = words.length;
-  if (W <= 1) return [[0, tokens.length - 1]];
-  let groups = [];
-  let st = 0;
-  for (const k of cuts) {
-    if (k < st || k >= W - 1) continue;
-    groups.push([st, k]);
-    st = k + 1;
-  }
-  groups.push([st, W - 1]);
-  groups = mergeTiny(groups, 2);
-  const out = [];
-  for (const [a, b] of groups) {
-    if (b - a + 1 > 14) out.push(...dpSplit(tokens, words, null, a, b));
-    else out.push([a, b]);
-  }
-  return out.map(([a, b], gi) => [gi === 0 ? 0 : words[a], gi === out.length - 1 ? tokens.length - 1 : words[b + 1] - 1]);
 }

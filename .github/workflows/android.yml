@@ -46,11 +46,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Quantize model for mobile
+      - name: Reciter timings and pauses
+        run: node scripts/recitations.js
+
+      - name: Tarteel speech model
         run: |
           pip install onnxruntime==1.20.1 onnx
-          python scripts/quantize.py
-          ls -la www/models
+          node scripts/tarteel.js
+          python scripts/quantize_tarteel.py
+          ls -la www/models www/models/tarteel www/data www/data/recit
 
       - run: npx cap add android
       - run: node scripts/android-setup.js
