@@ -63,10 +63,8 @@ function chunkAyah(tokens, segs) {
     const a = segs[map(k)];
     const b = segs[map(k + 1)];
     const gap = Math.max(0, b[0] - a[1]);
-    const extra = Math.max(0, (a[1] - a[0]) - 2.2 * rate * Math.max(1, tokens[words[k]].c.length));
-    const pause = gap + extra;
     const mark = markAfter(tokens, words, k);
-    if (pause >= 450 || (mark && pause >= 120)) cuts.push(k);
+    if (gap >= 250 || (mark && gap >= 80)) cuts.push(k);
   }
   let groups = [];
   let st = 0;
@@ -144,6 +142,10 @@ function chunkAyah(tokens, segs) {
       ((row && row[3]) || []).forEach((c) => { txt += words.slice(st, c + 1).join(' ') + '  ||  '; st = c + 1; });
       txt += words.slice(st).join(' ');
       console.log('  ' + r.id + ' ' + k + ': ' + txt);
+      const sf = (row && row[2]) || [];
+      const gl = [];
+      for (let w = 0; w + 1 < words.length && 2 * w + 2 < sf.length; w++) gl.push(words[w] + ' (' + (sf[2 * w + 2] - sf[2 * w + 1]) + ')');
+      console.log('    gaps: ' + gl.join(' · '));
     }
   }
 })().catch((e) => {
