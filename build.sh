@@ -5,11 +5,13 @@ cd "$(dirname "$0")"
 export PATH="$PATH:/c/Program Files/nodejs"
 
 JAVA_HOME=""
-for d in "/c/Program Files/Eclipse Adoptium"/jdk-21* "/c/Program Files/Microsoft"/jdk-21* "/c/Program Files/Java"/jdk-21*; do
+LAD=""; if [ -n "$LOCALAPPDATA" ]; then LAD="$(cygpath -u "$LOCALAPPDATA")"; fi
+for d in "/c/Program Files"/*/jdk-21* "/c/Program Files"/*/jdk21* "/c/Program Files"/*/*/jdk-21* "/c/Program Files"/*/temurin-21* "$LAD"/Programs/*/jdk-21* "$HOME"/.jdks/*21*; do
   if [ -f "$d/bin/java.exe" ] || [ -f "$d/bin/java" ]; then JAVA_HOME="$d"; break; fi
 done
 if [ -z "$JAVA_HOME" ]; then
-  echo "❌ محتاج Java 21: نزّلها من adoptium.net (Temurin 21 LTS)"
+  echo "❌ مش لاقي Java 21. الموجود على الجهاز:"
+  ls -d "/c/Program Files"/*/jdk* "/c/Program Files"/*/*/jdk* 2>/dev/null || echo "(مفيش أي Java)"
   exit 1
 fi
 export JAVA_HOME
