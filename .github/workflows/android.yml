@@ -52,12 +52,6 @@ jobs:
           python scripts/quantize.py
           ls -la www/models
 
-      - name: Tarteel speech model
-        run: |
-          node scripts/tarteel.js
-          python scripts/quantize_tarteel.py
-          ls -la www/models www/models/tarteel
-
       - run: npx cap add android
       - run: node scripts/android-setup.js
       - run: npx cap sync android

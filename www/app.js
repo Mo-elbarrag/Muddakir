@@ -1,5 +1,4 @@
-import { initEngine, isReady, startListening, stopListening, inferNow, analyzePcm } from './recite.js';
-import { refSkeleton, heardSkeleton, alignWords, tajweedNotes } from './words.js';
+import { initEngine, isReady, startListening, stopListening, inferNow, refSkeleton, heardSkeleton, alignWords, analyzePcm, tajweedNotes } from './recite.js';
 import { parseAyah, splitChunks, buildStages, meaningSegment, chunksFromCuts, isStopMark, LEGEND } from './quran.js';
 
 const RECITERS = [
@@ -834,7 +833,7 @@ async function fetchAudioBuffer(url) {
 }
 
 async function audioCuts(s, a, tokens, row) {
-  const ck = 'mdk-cuts6-' + reciterId(profile()) + '-' + s + '-' + a;
+  const ck = 'mdk-cuts5-' + reciterId(profile()) + '-' + s + '-' + a;
   if (cutCache[ck]) return cutCache[ck];
   try { const v = JSON.parse(localStorage.getItem(ck)); if (v && Array.isArray(v.c)) { cutCache[ck] = v; return v; } } catch (e) { /* ignore */ }
   const buf = await fetchAudioBuffer(audioUrl(s, a));

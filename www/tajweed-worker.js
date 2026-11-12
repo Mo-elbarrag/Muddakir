@@ -1,25 +1,17 @@
+const PHONEMES = ['ء','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش','ص','ض','ط','ظ','ع','غ','ف','ق','ك','ل','م','ن','ه','و','ي','ا','ۦ','ۥ','َ','ُ','ِ','۪','ـ','ٲ','ڇ','ں','۾','ۜ','ؙ'];
 const N_FFT = 400;
 const HOP = 160;
 const NB = 201;
 const N_MELS = 80;
+const LEAD = 6400;
 const CAP = 16000 * 58;
-const KEEP = 16000 * 26;
-const WIN = 480000;
-const NF = 3000;
+const KEEP = 16000 * 30;
 const BASE = self.location.href.replace(/[^/]*$/, '');
-const MDIR = BASE + 'models/tarteel/';
 
 let ortLib = null;
-let enc = null;
-let dec = null;
-let cfg = null;
-let idToTok = null;
-let byteDec = null;
-let PROMPT = null;
-let EOT = 50257;
+let session = null;
 let initP = null;
 let queue = Promise.resolve();
-let waiting = null;
 
 const win = new Float32Array(N_FFT);
 for (let i = 0; i < N_FFT; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N_FFT);
@@ -67,7 +59,7 @@ const melFB = (() => {
 })();
 
 const audio = new Float32Array(CAP);
-let len = 0;
+let len = LEAD;
 const cache = new Float32Array(Math.ceil(CAP / HOP) * N_MELS);
 let cached = 0;
 let leftover = new Float32Array(0);
@@ -76,7 +68,8 @@ const frameBuf = new Float32Array(N_FFT);
 const powBuf = new Float32Array(NB);
 
 function reset() {
-  len = 0;
+  audio.fill(0, 0, LEAD);
+  len = LEAD;
   cached = 0;
   leftover = new Float32Array(0);
   rsPos = 0;
@@ -84,8 +77,10 @@ function reset() {
 
 function append(samples) {
   if (len + samples.length > CAP) {
-    audio.copyWithin(0, len - KEEP, len);
-    len = KEEP;
+    const from = Math.max(LEAD, len - KEEP);
+    audio.copyWithin(LEAD, from, len);
+    audio.fill(0, 0, LEAD);
+    len = LEAD + (len - from);
     cached = 0;
   }
   const n = Math.min(samples.length, CAP - len);
@@ -118,7 +113,101 @@ function pushAudio(data, rate) {
   append(out.subarray(0, o));
 }
 
-function melFrame(src, srcLen, t, out, off) {
+function melFrame(t, out, off) {
+  const c = t * HOP - N_FFT / 2;
+  for (let n = 0; n < N_FFT; n++) {
+    const idx = c + n;
+    frameBuf[n] = (idx >= 0 && idx < len ? audio[idx] : 0) * win[n];
+  }
+  for (let k = 0; k < NB; k++) {
+    let re = 0;
+    let im = 0;
+    const base = k * N_FFT;
+    for (let n = 0; n < N_FFT; n++) {
+      const v = frameBuf[n];
+      re += v * cosT[base + n];
+      im -= v * sinT[base + n];
+    }
+    powBuf[k] = re * re + im * im;
+  }
+  for (let m = 0; m < N_MELS; m++) {
+    let s = 0;
+    const b = m * NB;
+    for (let k = 0; k < NB; k++) s += melFB[b + k] * powBuf[k];
+    out[off + m] = s;
+  }
+}
+
+async function init() {
+  if (session) return;
+  if (!initP) {
+    initP = (async () => {
+      try { importScripts(BASE + 'vendor/ort/ort.wasm.min.js'); } catch (e) { importScripts(BASE + 'vendor/ort/ort.min.js'); }
+      ortLib = self.ort;
+      ortLib.env.wasm.numThreads = 1;
+      ortLib.env.wasm.wasmPaths = BASE + 'vendor/ort/';
+      session = await ortLib.InferenceSession.create(BASE + 'models/tajweed-int8.onnx', { executionProviders: ['wasm'] });
+    })();
+    initP.catch(() => { initP = null; });
+  }
+  return initP;
+}
+
+async function infer() {
+  await init();
+  const total = len + LEAD;
+  const F = Math.floor(total / HOP);
+  const cacheable = Math.max(0, Math.floor((len - N_FFT / 2) / HOP) + 1);
+  const upto = Math.min(cacheable, F);
+  while (cached < upto) { melFrame(cached, cache, cached * N_MELS); cached++; }
+  let start = F > 3000 ? F - 3000 : 0;
+  let n = F - start;
+  if (n % 2) { start++; n--; }
+  if (n < 20) return '';
+  const mel = new Float32Array(N_MELS * n);
+  const tmp = new Float32Array(N_MELS);
+  let maxv = -Infinity;
+  for (let f = 0; f < n; f++) {
+    const t = start + f;
+    let src = cache;
+    let off = t * N_MELS;
+    if (t >= cached) { melFrame(t, tmp, 0); src = tmp; off = 0; }
+    for (let m = 0; m < N_MELS; m++) {
+      const v = Math.log10(Math.max(src[off + m], 1e-10));
+      mel[m * n + f] = v;
+      if (v > maxv) maxv = v;
+    }
+  }
+  const floor = maxv - 8;
+  for (let i = 0; i < mel.length; i++) {
+    const v = mel[i] < floor ? floor : mel[i];
+    mel[i] = (v + 4) / 4;
+  }
+  const feeds = {
+    mel: new ortLib.Tensor('float32', mel, [1, N_MELS, n]),
+    riwaya: new ortLib.Tensor('int64', BigInt64Array.from([0n]), [1])
+  };
+  const out = await session.run(feeds);
+  const lp = out.logprobs || out[Object.keys(out)[0]];
+  const T = lp.dims[1];
+  const V = lp.dims[2];
+  const d = lp.data;
+  let prev = 0;
+  let s = '';
+  for (let t = 0; t < T; t++) {
+    let best = 0;
+    let bv = -Infinity;
+    const b = t * V;
+    for (let v = 0; v < V; v++) {
+      if (d[b + v] > bv) { bv = d[b + v]; best = v; }
+    }
+    if (best !== prev && best !== 0) s += PHONEMES[best - 1] || '';
+    prev = best;
+  }
+  return s;
+}
+
+function melFrameSrc(src, srcLen, t, out, off) {
   const c = t * HOP - N_FFT / 2;
   for (let n = 0; n < N_FFT; n++) {
     const idx = c + n;
@@ -143,155 +232,51 @@ function melFrame(src, srcLen, t, out, off) {
   }
 }
 
-function features(src, srcLen, useCache) {
-  const f0 = srcLen > WIN ? Math.ceil((srcLen - WIN) / HOP) : 0;
-  if (useCache) {
-    const cacheable = srcLen >= N_FFT / 2 ? Math.floor((srcLen - N_FFT / 2) / HOP) + 1 : 0;
-    while (cached < cacheable) { melFrame(src, srcLen, cached, cache, cached * N_MELS); cached++; }
-  }
-  const feats = new Float32Array(N_MELS * NF);
+async function scriptOfPcm(pcm) {
+  await init();
+  const L = LEAD + pcm.length + LEAD;
+  const src = new Float32Array(L);
+  src.set(pcm, LEAD);
+  const F = Math.floor(L / HOP);
+  let start = F > 3000 ? F - 3000 : 0;
+  let n = F - start;
+  if (n % 2) { start++; n--; }
+  if (n < 20) return '';
+  const mel = new Float32Array(N_MELS * n);
   const tmp = new Float32Array(N_MELS);
   let maxv = -Infinity;
-  for (let f = 0; f < NF; f++) {
-    const t = f0 + f;
-    if (t * HOP - N_FFT / 2 >= srcLen) {
-      for (let m = 0; m < N_MELS; m++) feats[m * NF + f] = -10;
-      if (maxv < -10) maxv = -10;
-      continue;
-    }
-    let arr = tmp;
-    let off = 0;
-    if (useCache && t < cached) { arr = cache; off = t * N_MELS; } else melFrame(src, srcLen, t, tmp, 0);
+  for (let fr = 0; fr < n; fr++) {
+    melFrameSrc(src, L, start + fr, tmp, 0);
     for (let m = 0; m < N_MELS; m++) {
-      const v = Math.log10(Math.max(arr[off + m], 1e-10));
-      feats[m * NF + f] = v;
+      const v = Math.log10(Math.max(tmp[m], 1e-10));
+      mel[m * n + fr] = v;
       if (v > maxv) maxv = v;
     }
   }
   const floor = maxv - 8;
-  for (let i = 0; i < feats.length; i++) {
-    const v = feats[i] < floor ? floor : feats[i];
-    feats[i] = (v + 4) / 4;
+  for (let i = 0; i < mel.length; i++) {
+    const v = mel[i] < floor ? floor : mel[i];
+    mel[i] = (v + 4) / 4;
   }
-  return feats;
-}
-
-function bytesToUnicode() {
-  const bs = [];
-  for (let i = 33; i <= 126; i++) bs.push(i);
-  for (let i = 161; i <= 172; i++) bs.push(i);
-  for (let i = 174; i <= 255; i++) bs.push(i);
-  const cs = bs.slice();
-  let n = 0;
-  for (let b = 0; b < 256; b++) {
-    if (!bs.includes(b)) { bs.push(b); cs.push(256 + n); n++; }
-  }
-  const m = {};
-  bs.forEach((b, i) => { m[String.fromCharCode(cs[i])] = b; });
-  return m;
-}
-
-function decodeIds(ids) {
-  const bytes = [];
-  for (const id of ids) {
-    if (id >= EOT) continue;
-    const t = idToTok[id];
-    if (!t) continue;
-    for (const ch of t) { const b = byteDec[ch]; if (b !== undefined) bytes.push(b); }
-  }
-  return new TextDecoder().decode(new Uint8Array(bytes)).trim();
-}
-
-async function init() {
-  if (enc && dec) return;
-  if (!initP) {
-    initP = (async () => {
-      try { importScripts(BASE + 'vendor/ort/ort.wasm.min.js'); } catch (e) { importScripts(BASE + 'vendor/ort/ort.min.js'); }
-      ortLib = self.ort;
-      ortLib.env.wasm.numThreads = 1;
-      ortLib.env.wasm.wasmPaths = BASE + 'vendor/ort/';
-      cfg = await (await fetch(MDIR + 'config.json')).json();
-      const tj = await (await fetch(MDIR + 'tokenizer.json')).json();
-      idToTok = [];
-      for (const [t, id] of Object.entries(tj.model.vocab)) idToTok[id] = t;
-      const special = {};
-      (tj.added_tokens || []).forEach((a) => { special[a.content] = a.id; idToTok[a.id] = null; });
-      EOT = special['<|endoftext|>'] !== undefined ? special['<|endoftext|>'] : 50257;
-      const sp = (k, d) => (special[k] !== undefined ? special[k] : d);
-      PROMPT = [sp('<|startoftranscript|>', 50258), sp('<|ar|>', 50272), sp('<|transcribe|>', 50359), sp('<|notimestamps|>', 50363)];
-      byteDec = bytesToUnicode();
-      enc = await ortLib.InferenceSession.create(MDIR + 'encoder.onnx', { executionProviders: ['wasm'] });
-      dec = await ortLib.InferenceSession.create(MDIR + 'decoder.onnx', { executionProviders: ['wasm'] });
-    })();
-    initP.catch(() => { initP = null; });
-  }
-  return initP;
-}
-
-async function greedy(encOut, maxTokens) {
-  const names = dec.inputNames;
-  const merged = names.includes('use_cache_branch');
-  const encName = names.find((n) => n.includes('encoder_hidden_states')) || 'encoder_hidden_states';
-  const H = cfg.decoder_attention_heads || 6;
-  const Dh = (cfg.d_model || 384) / H;
-  const ids = PROMPT.slice();
-  const out = [];
-  let past = null;
-  for (let step = 0; step < maxTokens; step++) {
-    const useCache = merged && past;
-    const toks = useCache ? [ids[ids.length - 1]] : ids;
-    const feeds = {};
-    feeds.input_ids = new ortLib.Tensor('int64', BigInt64Array.from(toks.map((x) => BigInt(x))), [1, toks.length]);
-    feeds[encName] = encOut;
-    if (merged) {
-      feeds.use_cache_branch = new ortLib.Tensor('bool', [!!past], [1]);
-      for (const n of names) {
-        if (!n.startsWith('past_key_values')) continue;
-        feeds[n] = past ? past[n] : new ortLib.Tensor('float32', new Float32Array(0), [1, H, 0, Dh]);
-      }
-    }
-    const res = await dec.run(feeds);
-    const logits = res.logits || res[dec.outputNames[0]];
-    const V = logits.dims[2];
-    const T = logits.dims[1];
-    const base = (T - 1) * V;
-    const d = logits.data;
+  const out = await session.run({
+    mel: new ortLib.Tensor('float32', mel, [1, N_MELS, n]),
+    riwaya: new ortLib.Tensor('int64', BigInt64Array.from([0n]), [1])
+  });
+  const lp = out.logprobs || out[Object.keys(out)[0]];
+  const T = lp.dims[1];
+  const V = lp.dims[2];
+  const d = lp.data;
+  let prev = 0;
+  let res = '';
+  for (let t = 0; t < T; t++) {
     let best = 0;
     let bv = -Infinity;
-    for (let v = 0; v <= EOT && v < V; v++) { if (d[base + v] > bv) { bv = d[base + v]; best = v; } }
-    if (merged) {
-      const next = {};
-      for (const n of names) {
-        if (!n.startsWith('past_key_values')) continue;
-        if (past && n.includes('.encoder.')) next[n] = past[n];
-        else next[n] = res[n.replace('past_key_values', 'present')];
-      }
-      past = next;
-    }
-    if (best === EOT) break;
-    ids.push(best);
-    out.push(best);
-    if (out.length >= 16 && out.slice(-8).join(',') === out.slice(-16, -8).join(',')) break;
+    const b = t * V;
+    for (let v = 0; v < V; v++) { if (d[b + v] > bv) { bv = d[b + v]; best = v; } }
+    if (best !== prev && best !== 0) res += PHONEMES[best - 1] || '';
+    prev = best;
   }
-  return out;
-}
-
-function peak(src, from, to) {
-  let m = 0;
-  for (let i = from; i < to; i++) { const v = Math.abs(src[i]); if (v > m) m = v; }
-  return m;
-}
-
-async function transcribe(src, srcLen, useCache) {
-  await init();
-  if (srcLen < 8000) return '';
-  if (peak(src, Math.max(0, srcLen - WIN), srcLen) < 0.02) return '';
-  const feats = features(src, srcLen, useCache);
-  const eo = await enc.run({ [enc.inputNames[0]]: new ortLib.Tensor('float32', feats, [1, N_MELS, NF]) });
-  const encOut = eo[enc.outputNames[0]];
-  const secs = Math.min(30, srcLen / 16000);
-  const ids = await greedy(encOut, Math.min(160, Math.ceil(secs * 6) + 10));
-  return decodeIds(ids);
+  return res;
 }
 
 self.onmessage = (e) => {
@@ -304,23 +289,14 @@ self.onmessage = (e) => {
     return;
   }
   if (msg.type === 'analyze') {
-    queue = queue.then(() => transcribe(msg.audio, msg.audio.length, false))
+    queue = queue.then(() => scriptOfPcm(msg.audio))
       .then((script) => self.postMessage({ id: msg.id, type: 'done', script }))
       .catch((err) => self.postMessage({ id: msg.id, type: 'error', message: String((err && err.message) || err) }));
     return;
   }
   if (msg.type === 'infer') {
-    if (waiting) { waiting.push(msg.id); return; }
-    waiting = [msg.id];
-    queue = queue.then(async () => {
-      const ids = waiting;
-      waiting = null;
-      try {
-        const script = await transcribe(audio, len, true);
-        ids.forEach((id) => self.postMessage({ id, type: 'done', script }));
-      } catch (err) {
-        ids.forEach((id) => self.postMessage({ id, type: 'error', message: String((err && err.message) || err) }));
-      }
-    });
+    queue = queue.then(() => infer())
+      .then((script) => self.postMessage({ id: msg.id, type: 'done', script }))
+      .catch((err) => self.postMessage({ id: msg.id, type: 'error', message: String((err && err.message) || err) }));
   }
 };
