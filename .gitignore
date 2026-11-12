@@ -6,3 +6,4 @@ www/models/
 www/vendor/
 .tmp/
 muddakir.apk
+package-lock.json

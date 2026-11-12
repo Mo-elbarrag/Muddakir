@@ -3,23 +3,30 @@ set -e
 cd "$(dirname "$0")"
 
 export PATH="$PATH:/c/Program Files/nodejs"
-STUDIO_JBR="/c/Program Files/Android/Android Studio/jbr"
-if [ -d "$STUDIO_JBR" ]; then
-  export JAVA_HOME="$STUDIO_JBR"
-  export PATH="$JAVA_HOME/bin:$PATH"
+
+JAVA_HOME=""
+for d in "/c/Program Files/Eclipse Adoptium"/jdk-21* "/c/Program Files/Microsoft"/jdk-21* "/c/Program Files/Java"/jdk-21*; do
+  if [ -f "$d/bin/java.exe" ] || [ -f "$d/bin/java" ]; then JAVA_HOME="$d"; break; fi
+done
+if [ -z "$JAVA_HOME" ]; then
+  echo "❌ محتاج Java 21: نزّلها من adoptium.net (Temurin 21 LTS)"
+  exit 1
 fi
-if [ -n "$LOCALAPPDATA" ]; then
-  WIN_SDK="$(cygpath -u "$LOCALAPPDATA")/Android/Sdk"
-  if [ -d "$WIN_SDK" ]; then
-    export ANDROID_HOME="$WIN_SDK"
-    export ANDROID_SDK_ROOT="$WIN_SDK"
-    export PATH="$WIN_SDK/platform-tools:$PATH"
-  fi
+export JAVA_HOME
+export PATH="$JAVA_HOME/bin:$PATH"
+echo "Java: $JAVA_HOME"
+
+WIN_SDK=""
+if [ -n "$LOCALAPPDATA" ]; then WIN_SDK="$(cygpath -u "$LOCALAPPDATA")/Android/Sdk"; fi
+if [ -z "$WIN_SDK" ] || [ ! -d "$WIN_SDK" ]; then
+  echo "❌ Android SDK مش موجود: افتح Android Studio مرة وخليه يكمّل التسطيب"
+  exit 1
 fi
+export ANDROID_HOME="$WIN_SDK"
+export ANDROID_SDK_ROOT="$WIN_SDK"
+export PATH="$WIN_SDK/platform-tools:$PATH"
 
 command -v node >/dev/null || { echo "❌ Node.js مش موجود"; exit 1; }
-command -v java >/dev/null || { echo "❌ Java مش موجود: سطّب Android Studio الأول"; exit 1; }
-[ -n "$ANDROID_HOME" ] || { echo "❌ Android SDK مش موجود: افتح Android Studio مرة وخليه يكمّل التسطيب"; exit 1; }
 
 echo "== تحديث المشروع"
 git pull --rebase origin main || true
@@ -45,8 +52,10 @@ fi
 
 echo "== بناء التطبيق"
 if [ ! -d android ]; then npx cap add android; fi
+echo "sdk.dir=$(cygpath -m "$WIN_SDK")" > android/local.properties
 node scripts/android-setup.js
 npx cap sync android
+(cd android && ./gradlew --stop >/dev/null 2>&1 || true)
 (cd android && ./gradlew assembleDebug --no-daemon)
 cp -f android/app/build/outputs/apk/debug/app-debug.apk ./muddakir.apk
 echo "✅ الـ APK جاهز: $(pwd)/muddakir.apk"
