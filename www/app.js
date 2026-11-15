@@ -3,7 +3,6 @@ import { refSkeleton, heardSkeleton, alignWords } from './words.js';
 import { parseAyah, splitChunks, buildStages, meaningSegment, chunksFromCuts, LEGEND } from './quran.js';
 
 const RECITERS = [
-  { id: 'husary', name: 'محمود خليل الحصري', ea: 'Husary_128kbps' },
   { id: 'minshawi', name: 'محمد صديق المنشاوي', ea: 'Minshawy_Murattal_128kbps' }
 ];
 const REPEATS = [1, 3, 5, 7, 10];
@@ -151,14 +150,14 @@ function save() {
 const profile = () => db.profiles.find((p) => p.id === db.current) || null;
 const key = (s, a) => s + ':' + a;
 const passMark = (p) => (p.mode === 'kids' ? 70 : 80);
-const reciterId = (p) => (/minsh/i.test((p && p.reciter) || '') ? 'minshawi' : 'husary');
+const reciterId = () => 'minshawi';
 const reciterInfo = (id) => RECITERS.find((r) => r.id === id) || RECITERS[0];
 
 function newProfile(name, mode) {
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name, mode,
-    reciter: 'husary',
+    reciter: 'minshawi',
     repeat: mode === 'kids' ? 5 : 3,
     goal: mode === 'kids' ? 3 : 5,
     tajweed: true,
@@ -645,6 +644,7 @@ async function playRepeat(url, rng, times, onWord, onStep) {
 function cleanup() {
   stopAudio();
   stopListening();
+  document.querySelectorAll('.cut-editor').forEach((x) => x.remove());
 }
 
 const planActive = (p) => !!(p.plan && p.plan !== 'none');
@@ -959,6 +959,108 @@ function screenPractice(params) {
   });
 }
 
+const WAQF_RE = /[\u06D6\u06D7\u06D8\u06DA\u06DB]/;
+const PAUSE_SEC = 0.5;
+
+const wordIdx = (tokens) => { const w = []; tokens.forEach((t, i) => { if (t.c) w.push(i); }); return w; };
+
+function waqfCuts(tokens, words) {
+  const out = [];
+  for (let k = 0; k < words.length - 1; k++) {
+    for (let j = words[k] + 1; j < words[k + 1]; j++) if (WAQF_RE.test(tokens[j].plain)) { out.push(words[k]); break; }
+  }
+  return out;
+}
+
+function mergeSmall(words, cuts) {
+  const c = cuts.slice().sort((x, y) => x - y);
+  let changed = true;
+  while (changed && c.length) {
+    changed = false;
+    const sizes = [];
+    let prev = -1;
+    c.forEach((ti) => { const k = words.indexOf(ti); sizes.push(k - prev); prev = k; });
+    sizes.push(words.length - 1 - prev);
+    for (let j = 0; j < c.length; j++) {
+      if (sizes[j] < 3 || sizes[j + 1] < 3) { c.splice(j, 1); changed = true; break; }
+    }
+  }
+  return c;
+}
+
+function autoCuts(tokens, row) {
+  const words = wordIdx(tokens);
+  const flat = row && row[2];
+  let cuts = null;
+  if (flat && flat.length === words.length * 2) {
+    cuts = [];
+    for (let k = 0; k < words.length - 1; k++) {
+      const gap = (flat[2 * (k + 1)] - flat[2 * k + 1]) / 1000;
+      if (gap >= PAUSE_SEC) cuts.push(words[k]);
+    }
+    if (!cuts.length && words.length > 10) cuts = null;
+  }
+  if (!cuts) cuts = waqfCuts(tokens, words);
+  return mergeSmall(words, cuts);
+}
+
+function cutsFor(s, a, tokens, row) {
+  const mine = db.cuts && db.cuts[s + ':' + a];
+  return Array.isArray(mine) ? mine : autoCuts(tokens, row);
+}
+
+function stagesFromCuts(tokens, cuts) {
+  const words = wordIdx(tokens);
+  const set = new Set(cuts);
+  const chunks = [];
+  let from = 0;
+  for (let k = 0; k < words.length - 1; k++) {
+    if (set.has(words[k])) { const to = words[k + 1] - 1; chunks.push({ from, to }); from = to + 1; }
+  }
+  chunks.push({ from, to: tokens.length - 1 });
+  if (chunks.length < 2) return [{ from: 0, to: tokens.length - 1, kind: 'learn' }];
+  const out = [];
+  chunks.forEach((c, k) => {
+    out.push({ from: c.from, to: c.to, kind: 'learn' });
+    if (k >= 1) {
+      const lastK = k === chunks.length - 1;
+      out.push({ from: 0, to: lastK ? tokens.length - 1 : c.to, kind: lastK ? 'full' : 'link' });
+    }
+  });
+  return out;
+}
+
+function openCutEditor(s, a, tokens, cuts, onDone) {
+  const words = wordIdx(tokens);
+  const last = words[words.length - 1];
+  const set = new Set(cuts);
+  const ov = document.createElement('div');
+  ov.className = 'cut-editor';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(14,22,38,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const draw = () => {
+    ov.innerHTML = '<div style="background:#F6F4EF;color:#1C2B45;border-radius:18px;padding:18px;max-width:560px;width:100%;max-height:90vh;overflow:auto;direction:rtl">' +
+      '<b style="display:block;margin-bottom:6px">تعديل تقسيم الآية ' + arDigits(a) + '</b>' +
+      '<p class="small" style="margin:0 0 10px;opacity:.75">دوس على كلمة عشان تقطع بعدها، ودوس تاني عشان تشيل القطع.</p>' +
+      '<div class="q" style="line-height:2.4;font-size:1.4em;margin-bottom:12px">' + words.map((i) =>
+        '<span data-i="' + i + '" style="cursor:pointer;padding:2px 4px;border-radius:6px">' + esc(tokens[i].plain) + '</span>' +
+        (set.has(i) && i !== last ? '<b style="color:#C7A55A;margin:0 4px">｜</b>' : '')).join(' ') + '</div>' +
+      '<button class="primary" data-act="save">حفظ</button><button class="light-btn" data-act="auto">رجوع للتقسيم التلقائي</button><button class="link-btn" data-act="cancel">إلغاء</button></div>';
+  };
+  draw();
+  ov.addEventListener('click', (e) => {
+    const w = e.target.closest('[data-i]');
+    if (w) { const i = +w.dataset.i; if (i === last) return; if (set.has(i)) set.delete(i); else set.add(i); draw(); return; }
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'save') { db.cuts = db.cuts || {}; db.cuts[s + ':' + a] = Array.from(set).sort((x, y) => x - y); save(); }
+    else if (act === 'auto') { if (db.cuts) delete db.cuts[s + ':' + a]; save(); }
+    ov.remove();
+    if (act !== 'cancel') { toast('تم حفظ التقسيم'); onDone(); }
+  });
+  document.body.appendChild(ov);
+}
+
 function buildPractice(params, au, rid) {
   const s = params.s;
   const a = params.a;
@@ -973,8 +1075,7 @@ function buildPractice(params, au, rid) {
   const st0 = p.ayat[key(s, a)];
   const last = a === sura.ayat.length;
   const L = lessonOf(s, a);
-  const chunks = row ? chunksFromCuts(tokens, row[3] || []) : splitChunks(tokens);
-  const stages = mode === 'learn' ? buildStages(chunks) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
+  const stages = mode === 'learn' ? stagesFromCuts(tokens, cutsFor(s, a, tokens, row)) : [{ from: 0, to: tokens.length - 1, kind: 'review' }];
   const stepsOf = (stg) => (stg.kind === 'learn' ? ['listen', 'read', 'memory'] : stg.kind === 'link' ? ['listen', 'memory'] : ['memory']);
   let si = 0;
   if (mode === 'learn' && p.lastStage && p.lastStage.s === s && p.lastStage.a === a) si = Math.min(p.lastStage.si || 0, stages.length - 1);
@@ -994,7 +1095,7 @@ function buildPractice(params, au, rid) {
     '<div class="ttl center"><b class="qf">' + esc(title) + '</b><small id="sub"></small></div>' + brandMark(28) + '</header>' +
     '<main class="wrap">' + (stages.length > 1 ? '<div class="stagebar" id="stagebar">' + stages.map((x, k) => '<i data-si="' + k + '"></i>').join('') + '</div>' : '') +
     '<div class="frame"><div class="frame-in q" id="ayah"></div></div>' +
-    '<div class="steps" id="steps"></div><div class="stage-nav" id="stageNav"></div><p class="status-line" id="statusLine"></p>' +
+    '<div class="steps" id="steps"></div><div class="stage-nav" id="stageNav"></div>' + (mode === 'learn' ? '<button class="link-btn" id="editCuts">✂ عدّل التقسيم</button>' : '') + '<p class="status-line" id="statusLine"></p>' +
     '<div class="ctrls" id="ctrls"></div><div id="result"></div>' +
     '<details class="tafsir"><summary>' + icon('book', 16) + ' التفسير الميسر</summary><p id="tafsirText">جاري التحميل…</p></details>' +
     '<details class="tafsir" id="simBox" hidden><summary>' + icon('link', 16) + ' آيات متشابهة</summary><div id="simText"></div></details></main>';
@@ -1365,6 +1466,8 @@ function buildPractice(params, au, rid) {
     void kids;
   }
 
+  const ec = $('#editCuts');
+  if (ec) ec.onclick = () => { stopListen(false); stopAudio(); openCutEditor(s, a, tokens, cutsFor(s, a, tokens, row), () => { p.lastStage = null; save(); go('practice', { s, a, mode }, true); }); };
   drawAll();
   if (mode !== 'learn') setTimeout(() => { if (alive()) startListen(); }, 600);
 }
@@ -1960,8 +2063,7 @@ function screenSettings() {
     values.map((v) => '<button data-v="' + v + '" class="' + (String(current) === String(v) ? 'on' : '') + '">' + (fmt ? fmt(v) : v) + '</button>').join('') + '</div>';
   app.innerHTML = topBar('الإعدادات', true) + '<main class="wrap">' +
     '<section class="card"><h2>المظهر</h2>' + seg('themeSeg', ['auto', 'light', 'dark'], st.theme, (v) => ({ auto: 'تلقائي', light: 'نهاري', dark: 'ليلي' }[v])) + '</section>' +
-    '<section class="card"><h2>القارئ</h2>' + RECITERS.map((r) =>
-      '<label class="opt"><input type="radio" name="reciter" value="' + r.id + '" ' + (reciterId(p) === r.id ? 'checked' : '') + '> ' + r.name + '</label>').join('') + '</section>' +
+    '<section class="card"><h2>القارئ</h2><p class="muted small">محمد صديق المنشاوي · مرتل</p></section>' +
     '<section class="card"><h2>وِرد اليوم (آيات جديدة)</h2>' + seg('goalSeg', GOALS, p.goal) + '</section>' +
     '<section class="card"><h2>خطة الحفظ</h2>' + seg('planSeg', ['none', 'amma', 'tabarak', 'all'], p.plan || 'none', (v) => PLAN_NAMES[v]) + '<p class="muted small">الخطة بتختارلك الآية الجاية لوحدها، وبتحسب هتتمّها إمتى على حسب وِردك اليومي.</p></section>' +
     '<section class="card"><h2>عدد مرات الاستماع للمقطع</h2>' + seg('repSeg', REPEATS, p.repeat) + '</section>' +
