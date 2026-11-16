@@ -7,3 +7,4 @@ www/vendor/
 .tmp/
 muddakir.apk
 package-lock.json
+project_dump.txt
