@@ -1,5 +1,4 @@
 import os, time, traceback
-from types import SimpleNamespace
 import numpy as np
 import onnx
 import onnxruntime as ort
@@ -26,7 +25,8 @@ class OrtNet(torch.nn.Module):
     def forward(self, input_features=None, attention_mask=None, *args, **kw):
         r = self.sess.run(None, {'input_features': input_features.float().cpu().numpy(),
                                  'attention_mask': attention_mask.cpu().numpy().astype(self.mtype)})
-        return SimpleNamespace(logits={k: torch.from_numpy(v) for k, v in zip(OUTS, r)})
+        # المكتبة بتعمل model(...)[0] وبعدين بتلف على المستويات، فلازم tuple فيه dict
+        return ({k: torch.from_numpy(v) for k, v in zip(OUTS, r)},)
 
 def analyze(model, path, refs):
     units = units_for(refs)
@@ -44,8 +44,8 @@ def analyze(model, path, refs):
         seg, v, d, a, b = r
         if d:
             k = kind(v, seg)
-            if k in HIFZ:
-                errs.append(f'{u["ref"]}#{u["n"]} {u["label"]}:{k}')
+            tag = 'حفظ' if k in HIFZ else 'تجويد'
+            errs.append(f'[{tag}] {u["ref"]}#{u["n"]} {u["label"]}:{k} "{v}"->"{seg}"')
     return errs, dt
 
 TESTS = [
@@ -65,21 +65,32 @@ ref_model = Muaalem(device='cpu', dtype=torch.float32)
 q_model = Muaalem(device='cpu', dtype=torch.float32)
 q_model.model = OrtNet('onnx/muaalem-int8.onnx')
 
-same_all = True
+ok = diff = fail = 0
 for path, refs in TESTS:
     if not (LAB / path).exists():
+        print('missing:', path)
         continue
+    print('=' * 60)
     try:
         e1, t1 = analyze(ref_model, path, refs)
         e2, t2 = analyze(q_model, path, refs)
         same = e1 == e2
-        same_all &= same
-        print('=' * 60)
+        ok += same
+        diff += not same
         print(f'{path} -> {",".join(refs)} | torch {t1:.1f}s | int8 {t2:.1f}s | {"SAME ✓" if same else "DIFFERENT ✗"}')
-        print('  torch:', e1 or 'no errors')
+        print('  torch:')
+        for e in e1 or ['no errors']:
+            print('    ', e)
         if not same:
-            print('  int8 :', e2 or 'no errors')
+            print('  int8:')
+            for e in e2 or ['no errors']:
+                print('    ', e)
     except Exception:
+        fail += 1
+        print(f'{path} -> {",".join(refs)} | FAILED')
         traceback.print_exc()
-print('\nALL SAME' if same_all else '\nSOME DIFFERENT')
+    print(flush=True)
+
+print(f'\nSAME: {ok}   DIFFERENT: {diff}   FAILED: {fail}')
+print('ALL SAME ✓' if ok and not diff and not fail else 'NOT ALL SAME ✗')
 print('DONE')
