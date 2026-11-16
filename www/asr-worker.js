@@ -289,7 +289,7 @@ async function transcribe(src, srcLen, useCache) {
   const eo = await enc.run({ [enc.inputNames[0]]: new ortLib.Tensor('float32', feats, [1, N_MELS, NF]) });
   const encOut = eo[enc.outputNames[0]];
   const secs = Math.min(30, srcLen / 16000);
-  const ids = await greedy(encOut, Math.min(160, Math.ceil(secs * 6) + 10));
+  const ids = await greedy(encOut, Math.min(400, Math.ceil(secs * 12) + 20));
   return decodeIds(ids);
 }
 

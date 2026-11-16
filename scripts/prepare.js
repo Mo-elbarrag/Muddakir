@@ -241,7 +241,6 @@ function buildSimilar() {
   try { await buildTafsir(); } catch (e) { console.warn('WARNING: tafsir skipped: ' + e.message); }
   try { await buildTimings(); } catch (e) { console.warn('WARNING: word timings skipped: ' + e.message); }
   await buildFonts();
-  await buildModel();
   copyOrt();
   fs.rmSync(TMP, { recursive: true, force: true });
 })().catch((e) => {

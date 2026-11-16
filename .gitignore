@@ -8,3 +8,7 @@ www/vendor/
 muddakir.apk
 package-lock.json
 project_dump.txt
+lab/asr-test/node_modules
+lab/asr-test/raw
+lab/asr-test/app
+lab/asr-test/package-lock.json

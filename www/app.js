@@ -150,6 +150,7 @@ function save() {
 const profile = () => db.profiles.find((p) => p.id === db.current) || null;
 const key = (s, a) => s + ':' + a;
 const passMark = (p) => (p.mode === 'kids' ? 70 : 80);
+const hardError = (x) => x === 'bad' || x === 'miss';
 const reciterId = () => 'minshawi';
 const reciterInfo = (id) => RECITERS.find((r) => r.id === id) || RECITERS[0];
 
@@ -246,13 +247,13 @@ function checkAwards(p) {
   return out;
 }
 
-function applyResult(s, a, score, review) {
+function applyResult(s, a, score, review, passed) {
   const p = profile();
   const k = key(s, a);
   const st = p.ayat[k] || { lvl: 0, due: '', ok: 0, bad: 0 };
   p.attempts = (p.attempts || 0) + 1;
   p.scoreSum = (p.scoreSum || 0) + score;
-  if (score >= passMark(p)) {
+  if (passed === undefined ? score >= passMark(p) : passed) {
     st.ok++;
     if (review) {
       st.lvl = Math.min(INTERVALS.length - 1, st.lvl + 1);
@@ -1382,7 +1383,7 @@ function buildPractice(params, au, rid) {
       else if (!x || x === 'pending') statuses[ti] = 'miss';
     });
     const score = ref.length ? Math.round((pts * 100) / ref.length) : 0;
-    const pass = score >= passMark(p);
+    const pass = score >= passMark(p) && !ref.some((ti) => hardError(statuses[ti]));
     drawAyah();
     if (mode === 'learn') {
       if (pass) { stepPassed(score); return; }
@@ -1394,7 +1395,7 @@ function buildPractice(params, au, rid) {
       setStatus('راجع الكلمات الملونة وحاول مرة أخرى، وفقك الله');
       return;
     }
-    applyResult(s, a, score, mode === 'review' || !!(st0 && st0.lvl >= 1));
+    applyResult(s, a, score, mode === 'review' || !!(st0 && st0.lvl >= 1), pass);
     finished = true;
     $('#result').innerHTML = resultCard(pass, score, statuses, ref, pass ? '' : '<button class="primary" id="again">حاول مرة أخرى</button>');
     const ag = $('#again'); if (ag) ag.onclick = () => { $('#result').innerHTML = ''; finished = false; drawControls(); startListen(); };
@@ -1595,6 +1596,7 @@ function screenRecite(params) {
       const x = status[g];
       per[it.a].n++;
       per[it.a].pts += x === 'ok' ? 1 : x === 'near' ? 0.75 : x === 'hint' ? 0.5 : 0;
+      if (hardError(x)) per[it.a].hard = true;
     });
     let tp = 0;
     let tn = 0;
@@ -1603,14 +1605,15 @@ function screenRecite(params) {
       const sc = Math.round((per[a].pts * 100) / per[a].n);
       tp += per[a].pts;
       tn += per[a].n;
-      if (sc < passMark(p)) weak.push({ a: +a, sc });
+      const okA = sc >= passMark(p) && !per[a].hard;
+      if (!okA) weak.push({ a: +a, sc });
       if (purpose === 'surah') {
         const st = p.ayat[key(s, +a)];
-        if (st && st.lvl >= 1) applyResult(s, +a, sc, true);
+        if (st && st.lvl >= 1) applyResult(s, +a, sc, true, okA);
       }
     });
     const score = tn ? Math.round((tp * 100) / tn) : 0;
-    const pass = score >= passMark(p);
+    const pass = score >= passMark(p) && !weak.length;
     $('#rtext').innerHTML = range(from, to).map((a) => ayahTokens(s, a).map((t, i) => {
       if (!t.c) return '<span class="mark">' + esc(t.plain) + '</span>';
       return '<span class="w ' + status[gIdx[a][i]] + '">' + esc(t.plain) + '</span>';
