@@ -117,6 +117,7 @@ async function setupIcons(sharp) {
 }
 
 (async () => {
+  require('./version')();
   setupPermissions();
   setupSigning();
   try {

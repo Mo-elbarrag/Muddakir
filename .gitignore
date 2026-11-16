@@ -12,3 +12,5 @@ lab/asr-test/node_modules
 lab/asr-test/raw
 lab/asr-test/app
 lab/asr-test/package-lock.json
+www/version.json
+for_claude.txt

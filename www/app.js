@@ -468,6 +468,22 @@ async function getJsonCached(url) {
   }
 }
 
+async function showVersion() {
+  const el = $('#verText');
+  if (!el) return;
+  let txt = '';
+  const v = await getJsonCached('version.json');
+  if (v) txt = 'الإصدار ' + v.version + ' · بناء ' + v.build + (v.sha ? ' · ' + v.sha : '') + (v.date ? ' · ' + v.date : '');
+  else {
+    try {
+      const A = capPlugin('App');
+      const i = A && A.getInfo ? await A.getInfo() : null;
+      if (i) txt = 'الإصدار ' + i.version + ' · بناء ' + i.build;
+    } catch (e) { /* ignore */ }
+  }
+  if (el.isConnected) el.textContent = txt || 'غير معروف';
+}
+
 async function getTafsir() {
   if (tafsirData === undefined) tafsirData = await getJsonCached('data/tafsir.json');
   return tafsirData;
@@ -2082,6 +2098,7 @@ function screenSettings() {
     '<button class="light-btn" id="exp">حفظ نسخة احتياطية</button><button class="light-btn" id="imp">استرجاع نسخة</button>' +
     '<input type="file" id="impFile" accept=".json,application/json" hidden></section>' +
     '<section class="card"><h2>مصحح التلاوة</h2><p class="muted small">موديل ترتيل للتعرف على التلاوة، شغال على الموبايل نفسه من غير إنترنت. بيكتشف الكلمات الخطأ والناقصة، ومش بديل عن الشيخ.</p></section>' +
+    '<section class="card"><h2>عن التطبيق</h2><p class="muted small" id="verText">…</p></section>' +
     '<section class="card"><h2>الملف الشخصي</h2><button class="light-btn" id="switch">تغيير الملف</button>' +
     '<button class="danger-btn" id="del">حذف ملف ' + esc(p.name) + '</button></section></main>';
   $$('#themeSeg button').forEach((b) => { b.onclick = () => { st.theme = b.dataset.v; save(); render(history.state); }; });
@@ -2106,6 +2123,7 @@ function screenSettings() {
   $$('#tjSeg button').forEach((b) => { b.onclick = () => { p.tajweed = b.dataset.v === 'on'; save(); render(history.state); }; });
   $$('#modeSeg button').forEach((b) => { b.onclick = () => { p.mode = b.dataset.v; save(); render(history.state); }; });
   $('#family').onclick = () => go('family');
+  showVersion();
   $('#exp').onclick = () => exportBackup();
   $('#imp').onclick = () => $('#impFile').click();
   $('#impFile').onchange = (e) => importBackup(e.target.files && e.target.files[0]);
