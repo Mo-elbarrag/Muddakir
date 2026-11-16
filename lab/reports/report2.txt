@@ -1,0 +1,30 @@
+loading model...
+/home/codespace/muddakir-lab/lab2.py:80: DeprecationWarning: torch.ao.quantization is deprecated and will be removed in 2.10. 
+For migrations of users: 
+1. Eager mode quantization (torch.ao.quantization.quantize, torch.ao.quantization.quantize_dynamic), please migrate to use torchao eager mode quantize_ API instead 
+2. FX graph mode quantization (torch.ao.quantization.quantize_fx.prepare_fx,torch.ao.quantization.quantize_fx.convert_fx, please migrate to use torchao pt2e quantization API instead (prepare_pt2e, convert_pt2e) 
+3. pt2e quantization has been migrated to torchao (https://github.com/pytorch/ao/tree/main/torchao/quantization/pt2e) 
+see https://github.com/pytorch/ao/issues/2259 for more details
+  setattr(qmodel, name, torch.quantization.quantize_dynamic(val, {torch.nn.Linear}, dtype=torch.qint8))
+/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/ao/nn/quantized/modules/utils.py:72: UserWarning: torch.quantize_per_tensor, torch.quantize_per_channel and other quantized tensor creation functions that produce tensors with dtype torch.quint8, torch.qint8, and torch.qint32 are deprecated and will be removed in a future PyTorch release. Please see https://github.com/pytorch/pytorch/issues/184982 for more information. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/quantized/Quantizer.cpp:111.)
+  qweight = torch.quantize_per_tensor(
+
+######## 1) TAJWEED DETAILS ON CORRECT RECITATIONS ########
+1:2  كلمة 4 (ٱلْعَـٰلَمِينَ): المد العارض للسكون  متوقع=4  اتقال=2  [ۦۦۦۦ -> ۦۦ]
+2:48  كلمة 19 (يُنصَرُونَ): المد العارض للسكون  متوقع=4  اتقال=2  [ۥۥۥۥ -> ۥۥ]
+2:123  كلمة 18 (يُنصَرُونَ): المد العارض للسكون  متوقع=4  اتقال=2  [ۥۥۥۥ -> ۥۥ]
+7:19  كلمة 16 (ٱلظَّـٰلِمِينَ): المد العارض للسكون  متوقع=4  اتقال=2  [ۦۦۦۦ -> ۦۦ]
+
+######## 2) WHICH AYAH DID HE ACTUALLY RECITE? ########
+audio=2:48 expected=2:123 -> search found: ['2:48'] (ratio 0.05)  [OK]
+audio=2:123 expected=2:48 -> search found: ['2:123'] (ratio 0.05)  [OK]
+audio=7:19 expected=2:35 -> search found: ['7:19'] (ratio 0.05)  [OK]
+
+######## 3) INT8 QUANTIZED MODEL: SPEED + ACCURACY ########
+quantized modules: ['model']
+audio=2:48 text=2:48 (20s audio) | fp32 14.9s words=0 tashkeel=0 | int8 12.2s words=0 tashkeel=0
+audio=7:19 text=7:19 (18s audio) | fp32 12.4s words=0 tashkeel=0 | int8 10.1s words=0 tashkeel=0
+audio=2:48 text=2:123 (20s audio) | fp32 14.7s words=13 tashkeel=0 | int8 12.3s words=13 tashkeel=0
+audio=7:19 text=2:35 (18s audio) | fp32 12.4s words=9 tashkeel=0 | int8 10.1s words=9 tashkeel=0
+
+DONE

@@ -1,0 +1,121 @@
+loading models...
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+Traceback (most recent call last):
+  File "/home/codespace/muddakir-lab/lab7.py", line 74, in <module>
+    e2, t2 = analyze(q_model, path, refs)
+             ~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/lab7.py", line 36, in analyze
+    out = model([wave], [quran_phonetizer(joined, BASE, remove_spaces=True)], sampling_rate=SR)[0]
+          ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py", line 158, in no_grad
+    return func(*args, **kwargs)
+  File "/home/codespace/muddakir-lab/.venv/lib/python3.14/site-packages/quran_muaalem/inference.py", line 145, in __call__
+    outs = self.model(**features, return_dict=False)[0]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
+TypeError: 'types.SimpleNamespace' object is not subscriptable
+
+ALL SAME
+DONE

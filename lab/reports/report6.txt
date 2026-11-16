@@ -1,0 +1,7 @@
+== step 3: compare ==
+onnx outputs: ['ghonna', 'hams_or_jahr', 'istitala', 'itbaq', 'phonemes', 'qalqla', 'safeer', 'shidda_or_rakhawa', 'tafashie', 'tafkheem_or_taqeeq', 'tikraar'] | comparing: phonemes
+audio/002048.mp3 (20s) | torch 15.9s | onnx-fp32 12.6s match=100.0% | onnx-int8 10.0s match=99.0%
+audio/007019.mp3 (18s) | torch 12.5s | onnx-fp32 9.7s match=100.0% | onnx-int8 7.4s match=98.2%
+mine/1.ogg (15s) | torch 9.6s | onnx-fp32 7.7s match=100.0% | onnx-int8 5.5s match=99.7%
+mine/3.ogg (12s) | torch 6.2s | onnx-fp32 5.9s match=100.0% | onnx-int8 4.2s match=97.6%
+DONE
